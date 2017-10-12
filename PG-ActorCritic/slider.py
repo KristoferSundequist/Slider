@@ -104,10 +104,10 @@ t = Target(50)
 ## RL STUFF ##
 ##############
 
-state_space_size = 4
+state_space_size = 6
 
 def get_state():
-    return np.array([s.x/width, s.y/height, t.x/width, t.y/height])
+    return np.array([s.x/width, s.y/height, s.dx/10, s.dy/10, t.x/width, t.y/height])
 
 def step(action):
     s.push(action)
@@ -122,6 +122,8 @@ def step(action):
     
 def getEpisode(n):
     policy.agent.initHidden()
+    policy.agent.zero_grad()
+    policy.opt.zero_grad()
     t.reset()
     s.reset()
     
@@ -129,35 +131,35 @@ def getEpisode(n):
     actionprobs = []
     actions = np.zeros((n,4))
     rewards = np.zeros(n)
-
+    values = []
     current_state = get_state()
     
     for i in range(n):
-        actionprob, action = policy.get_action(current_state)
+        actionprob, value,action = policy.get_action(current_state)
 
         states[i] = current_state
         actions[i] = np.eye(4)[action]
         actionprobs.append(actionprob)
-        
+        values.append(value)
         reward, current_state = step(action)
 
         rewards[i] = reward
 
-    return states, actionprobs, actions, rewards
+        
+    return states, actionprobs, values, actions, discount(rewards,0.99,values[len(values)-1].data[0][0]), rewards
 
 #torch.save(policy.agent.state_dict(), PATH)
 #policy.agent.load_state_dict(torch.load(PATH))
 
 running_reward = 0
-def train(episode_size, episodes,beta):
+def train(episode_size, episodes, beta):
     global running_reward
     decay = 0.9
     for i in range(episodes):
-        policy.agent.zero_grad()
-        states, actionprobs, actions, rewards = getEpisode(episode_size)
+        states, actionprobs, values,actions, discrewards, rewards = getEpisode(episode_size)
         running_reward = decay*running_reward + rewards.sum()*(1-decay)
         print("running: ", running_reward, ", cur: ", rewards.sum())
-        policy.train(states, actionprobs, actions, discount(rewards,0.99,0),beta)
+        policy.train(states, actionprobs,values,actions,discrewards,beta)
         
 
 def discount(r,gamma,init):
@@ -173,10 +175,12 @@ def discount(r,gamma,init):
     return dr
 
 def agent_loop(iterations):
+    t.reset()
+    s.reset()
     import time
-    #rnn.initHidden()
+    policy.agent.initHidden()
     for i in range(iterations):
-            _,action = policy.get_action(get_state())
+            _,_,action = policy.get_action(get_state())
             s.push(action)
             s.update()
             if intersect(s,t):
@@ -186,18 +190,3 @@ def agent_loop(iterations):
             s.render(win)
             time.sleep(0.01)
             clear(win)
-
-def random_loop(iterations):
-    import time
-    for i in range(iterations):
-            s.push(np.random.randint(5))
-            s.update()
-            if intersect(s,t):
-                t.reset()
-            
-            t.render(win)
-            s.render(win)
-            time.sleep(0.01)
-            clear(win)
-
-

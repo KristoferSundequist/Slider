@@ -154,7 +154,7 @@ def train(episode_size, episodes,beta):
         policy.agent.zero_grad()
         states, actionprobs, actions, rewards = getEpisode(episode_size)
         running_reward = decay*running_reward + rewards.sum()*(1-decay)
-        print(running_reward)
+        print(running_reward, " ", rewards.sum())
         policy.train(states, actionprobs, actions, discount(rewards,0.99,0),beta)
         
 

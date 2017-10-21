@@ -169,7 +169,9 @@ def getEpisode(n):
 #torch.save(policy.agent.state_dict(), PATH)
 #policy.agent.load_state_dict(torch.load(PATH))
 
-def train(num_actors,episode_size,episodes,beta,ppo_epochs,eps,gamma,lambd,lr):
+#train(10,4000,1000,0.01,5,0.07,0.99,0.95,0.0002,2000)
+
+def train(num_actors,episode_size,episodes,beta,ppo_epochs,eps,gamma,lambd,lr,batch_size):
     running_reward = 0
     decay = 0.9
 
@@ -179,29 +181,27 @@ def train(num_actors,episode_size,episodes,beta,ppo_epochs,eps,gamma,lambd,lr):
         actions_data = []
         values_data = []
         advantage_data = []
-        for _ in range(num_actors):
-            states, actionprobs, actions, values, rewards = getEpisode(episode_size)
 
-            #print stuff
-            running_reward = decay*running_reward + rewards.sum()*(1-decay)
-            print(running_reward, " ", rewards.sum())
-            
+        episode_reward_sums = np.zeros(num_actors)
+        for a in range(num_actors):
+            states, actionprobs, actions, values, rewards = getEpisode(episode_size)
+            episode_reward_sums[a] = rewards.sum()
             states_data.append(states)
             actionprobs_data.append(torch.cat(actionprobs).float().data)
             actions_data.append(actions)
-
             values = torch.cat(values).view(-1).float().data
             values_data.append(values)
-
             gaes = generalized_advantage_estimation(rewards,values.numpy(),gamma,lambd,values[-1])
             advantage_data.append(gaes)
-            
+
+        running_reward = decay*running_reward + episode_reward_sums.mean()*(1-decay)
+        print(running_reward, " ", episode_reward_sums.mean())
         acc_states = np.concatenate(states_data)
         acc_actionprobs = torch.cat(actionprobs_data)
         acc_actions = np.concatenate(actions_data)
         acc_values = torch.cat(values_data)
         acc_advantage = np.concatenate(advantage_data)
-        policy.train(acc_states, acc_actionprobs, acc_actions, acc_values, acc_advantage,beta,ppo_epochs,eps,lr)
+        policy.train(acc_states, acc_actionprobs, acc_actions, acc_values, acc_advantage,beta,ppo_epochs,eps,lr,batch_size)
     
 def generalized_advantage_estimation(rewards,values,gamma,lambd,last):
     rewards = rewards.astype(float)

@@ -41,9 +41,9 @@ class policy(nn.Module):
 agent = policy()
 agent.apply(weight_init)
 
-opt = optim.Adam(agent.parameters(), lr=0.0002)
+opt = optim.Adam(agent.parameters(), lr=0.0001)
 
-def train(states,old_actionprobs,actions,values,advantages,beta,ppo_epochs,eps,learning_rate):
+def train(states,old_actionprobs,actions,values,advantages,beta,ppo_epochs,eps,learning_rate,batch_size):
     #opt = optim.Adam(agent.parameters(), lr=learning_rate)
     states = torch.from_numpy(states).float()
     actions = torch.from_numpy(actions)
@@ -52,7 +52,7 @@ def train(states,old_actionprobs,actions,values,advantages,beta,ppo_epochs,eps,l
     actionprobs = old_actionprobs
     
     for _ in range(ppo_epochs):
-        sampler = BatchSampler(SubsetRandomSampler(range(len(states))), 200,drop_last=False)
+        sampler = BatchSampler(SubsetRandomSampler(range(len(states))), batch_size,drop_last=False)
         for indices in sampler:
             indices = torch.LongTensor(indices)
             taken_actions = Variable(actions[indices]).float()

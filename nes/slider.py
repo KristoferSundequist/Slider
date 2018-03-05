@@ -139,7 +139,6 @@ class Enemy:
 def intersect(slider, target):
     return slider.radius + target.radius > np.sqrt(np.power(slider.x - target.x, 2) + np.power(slider.y - target.y, 2))
 
-
 s = Slider()
 t = Target(50)
 enemy = Enemy(30)
@@ -168,13 +167,12 @@ def step(action):
         #reward -= 1
         enemy.reset()
         
-    return reward, get_state()
+    return reward, get_state()    
 
 def reset():
-    t.reset()
     s.reset()
+    t.reset()
     enemy.reset()
-    
 
 def render():
     clear(win)

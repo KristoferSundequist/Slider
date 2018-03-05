@@ -49,7 +49,7 @@ class Slider:
             self.dx += self.dd
         elif direction == 3:
             self.dy += self.dd
-
+        
         if self.dx > 10: self.dx = 10
         if self.dx < -10: self.dx = -10
         if self.dy > 10: self.dy = 10
@@ -208,6 +208,8 @@ def getEpisode(n):
 #train(4,5000,1000,0.01,10,0.1,0.98,0.95,0.0002,1000)
 
 #train(2,2000,1000,0.01,10,0.2,0.98,0.95,0.0002,200)
+
+#train(10,10000,10,0.01,10,0.2,0.98,0.95,0.0002,10000)
 running_reward = 0
 def train(num_actors,episode_size,episodes,beta,ppo_epochs,eps,gamma,lambd,lr,batch_size):
     global running_reward

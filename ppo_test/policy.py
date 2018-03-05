@@ -12,10 +12,9 @@ class policy(nn.Module):
         self.fc1 = nn.Linear(8,200)
         self.fc2 = nn.Linear(200,200)
         self.fc3 = nn.Linear(200,200)
-        self.fc4 = nn.Linear(200,60)
-
-        self.action_out = nn.Linear(60,4)
-        self.value_out = nn.Linear(60,1)
+        self.action_out = nn.Linear(200,4)
+        
+        self.value_out = nn.Linear(200,1)
         
         self.apply(self.weight_init)
         self.opt = optim.Adam(self.parameters(), lr=0.0002)
@@ -32,7 +31,6 @@ class policy(nn.Module):
         x = F.selu(self.fc1(x))
         x = F.selu(self.fc2(x))
         x = F.selu(self.fc3(x))
-        x = F.selu(self.fc4(x))
         
         actions = self.action_out(x)
         value = self.value_out(x)
@@ -67,8 +65,8 @@ class policy(nn.Module):
                 surr2 = torch.clamp(ratio, 1 - eps , 1 + eps)*adv
                 action_loss = -torch.min(surr1,surr2).mean()
 
-#                value_target = Variable(advantages[indices]) + Variable(values[indices])
- #               value_loss = (new_values - value_target).pow(2).mean()
+#                value_target = Variable(values[indices]) + Variable(advantages[indices])
+#                value_loss = (new_values - value_target).pow(2).mean()
             
             
                 loss = action_loss - beta*entropy.mean() 

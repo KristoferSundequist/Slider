@@ -18,13 +18,11 @@ class policy(nn.Module):
     def __init__(self):
         super(policy, self).__init__()
 
-        self.fc1 = nn.Linear(8,200)
+        self.fc1 = nn.Linear(12,200)
         self.fc2 = nn.Linear(200,200)
         self.fc3 = nn.Linear(200,200)
-        
-        self.fc41 = nn.Linear(200,200)
-        self.fc42 = nn.Linear(200,200)
-        
+        self.fc4 = nn.Linear(200,200)
+
         self.action_out = nn.Linear(200,4)
         self.value_out = nn.Linear(200,1)
         
@@ -32,23 +30,25 @@ class policy(nn.Module):
         x = F.selu(self.fc1(x))
         x = F.selu(self.fc2(x))
         x = F.selu(self.fc3(x))
+        x = F.selu(self.fc4(x))
         
-        x1 = F.selu(self.fc41(x))
-        x2 = F.selu(self.fc42(x))
-        
-        actions = self.action_out(x1)
-        value = self.value_out(x2)
+        actions = self.action_out(x)
+        value = self.value_out(x)
         
         return F.softmax(actions), value
 
+    def get_action(self,state):
+        out,value = self(Variable(torch.from_numpy(state), volatile=True).view(1,len(state)).float())
+        return out, out.multinomial().data[0][0], value
+    
+agent1 = policy()
+agent1.apply(weight_init)
 
-agent = policy()
-agent.apply(weight_init)
+agent2 = policy()
+agent2.apply(weight_init)
 
-opt = optim.Adam(agent.parameters(), lr=0.0002)
-
-def train(states,old_actionprobs,actions,values,advantages,beta,ppo_epochs,eps,learning_rate,batch_size):
-    #opt = optim.Adam(agent.parameters(), lr=learning_rate)
+def train(states,old_actionprobs,actions,values,advantages,beta,ppo_epochs,eps,learning_rate,batch_size,net):
+    opt = optim.Adam(net.parameters(), lr=learning_rate)
     states = torch.from_numpy(states).float()
     actions = torch.from_numpy(actions)
     advantages = torch.from_numpy(advantages).float()
@@ -61,7 +61,7 @@ def train(states,old_actionprobs,actions,values,advantages,beta,ppo_epochs,eps,l
             indices = torch.LongTensor(indices)
             taken_actions = Variable(actions[indices]).float()
             
-            new_actionprobs, new_values = agent(Variable(states[indices]))
+            new_actionprobs, new_values = net(Variable(states[indices]))
             new_action = torch.sum(new_actionprobs*taken_actions,1)
             
             old_actionprobs = Variable(actionprobs[indices]).float()
@@ -76,17 +76,12 @@ def train(states,old_actionprobs,actions,values,advantages,beta,ppo_epochs,eps,l
             surr2 = torch.clamp(ratio, 1 - eps , 1 + eps)*adv
             action_loss = -torch.min(surr1,surr2).mean()
 
-            value_target = Variable(values[indices]) + Variable(advantages[indices])
+            value_target = Variable(advantages[indices]) + Variable(values[indices])
             value_loss = (new_values - value_target).pow(2).mean()
             
             
             loss = action_loss + value_loss - beta*entropy.mean() 
 
-            agent.zero_grad()
+            net.zero_grad()
             loss.backward()
             opt.step()
-
-def get_action(state):    
-    out,value = agent(Variable(torch.from_numpy(state), volatile=True).view(1,8).float())
-    
-    return out, out.multinomial().data[0][0], value

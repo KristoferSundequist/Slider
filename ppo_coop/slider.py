@@ -19,14 +19,13 @@ def clear(win):
 
 class Slider:
     
-    def __init__(self,c):
+    def __init__(self):
         self.x = np.random.randint(50,width-50)
         self.y = np.random.randint(50,height-50)
         self.radius = 30
         self.dx = np.random.randint(-10,10)
         self.dy = np.random.randint(-10,10)
         self.dd = 0.5
-        self.color = c
 
 
     def reset(self):
@@ -80,10 +79,7 @@ class Slider:
         
                     
     def render(self,win):
-        c = Circle(Point(self.x, self.y), self.radius)
-        c.setFill(self.color)
-        c.draw(win)
-        
+        Circle(Point(self.x, self.y), self.radius).draw(win)
 
 class Target:
     def __init__(self,radius):
@@ -100,34 +96,63 @@ class Target:
         c.setFill('green')
         c.draw(win)
 
+class Enemy:
+    def __init__(self,radius):
+        self.x = np.random.randint(width)
+        self.y = np.random.randint(height)
+        self.radius = radius
+
+    def reset(self):
+        self.x = np.random.randint(width)
+        self.y = np.random.randint(height)
+
+    def render(self,win):
+        c = Circle(Point(self.x, self.y), self.radius)
+        c.setFill('red')
+        c.draw(win)
+
+    def update(self,sliderx,slidery):
+        if self.x > sliderx:
+            self.x -= 1
+        else:
+            self.x += 1
+            
+        if self.y > slidery:
+            self.y -= 1
+        else:
+            self.y += 1
+
 def getDistance(x1,x2,y1,y2):
     return np.sqrt(np.power(x1 - x2, 2) + np.power(y1 - y2, 2))
-        
+            
 def intersect(slider, target):
     return slider.radius + target.radius > getDistance(slider.x,target.x,slider.y,target.y)
 
 
 
-s1 = Slider('yellow')
-s2 = Slider('red')
+s1 = Slider()
+s2 = Slider()
 
 t = Target(20)
+enemy = Enemy(30)
 
 ##############
 ## RL STUFF ##
 ##############
 
-state_space_size = 10
+state_space_size = 12
 
 def get_state():
     return np.array([s1.x/width, s1.y/height, s1.dx/10, s1.dy/10,
                      s2.x/width, s2.y/height, s2.dx/10, s2.dy/10,
-                     t.x/width, t.y/height])
+                     t.x/width, t.y/height,
+                     enemy.x/width, enemy.y/height])
 
 def game_reset():
     s1.reset()
     s2.reset()
     t.reset()
+    enemy.reset()
     while intersect(s1,s2):
         s2.reset()
 
@@ -143,29 +168,32 @@ def step(action1,action2):
     s2.push(action2)
     s2.update()
 
-    reward = [0,0]
-    
-    #if agent collide, do bounce
-    if intersect(s1,s2):
-        d = getDistance(s1.x, s2.x, s1.y, s2.y)
-        nx = (s2.x - s1.x)/d
-        ny = (s2.y - s1.y)/d
-        p = 2 * (s1.dx * nx + s1.dy*ny - s2.dx * nx - s2.dy*ny) / (s1.radius + s2.radius)
-        s1.dx = s1.dx - p*s1.radius*nx
-        s1.dy = s1.dy - p*s1.radius*ny
-        s2.dx = s2.dx + p*s2.radius*nx
-        s2.dy = s2.dy + p*s2.radius*ny
-        s1.x += 2*s1.dx
-        s1.y += 2*s1.dy
-        s2.x += 2*s2.dx
-        s2.y += 2*s2.dy
-        reward[1] += 1;
+    #update enemy towards closest agent
+    if getDistance(s1.x,enemy.x,s1.y,enemy.y) < getDistance(s2.x,enemy.x,s2.y,enemy.y):
+        enemy.update(s1.x,s1.y)
+    else:
+        enemy.update(s2.x,s2.y)
 
-    if intersect(s1,t):
-        reward[0] += 1
-        reward[1] -= 5
+    #if agent collide, do bad bounce
+    if intersect(s1,s2):
+        s1.dx *= -1
+        s1.dy *= -1
+        s2.dx *= -1
+        s2.dy *= -1
+        s1.x += s1.dx
+        s1.y += s1.dy
+        s2.x += s2.dx
+        s2.y += s2.dy        
+
+    reward = 0
+    if intersect(s1,t) or intersect(s2,t):
+        reward += 1
         t.reset()
-    
+        
+    if intersect(s1,enemy) or intersect(s2,enemy):
+        reward -= 5
+        enemy.reset()
+        
     return reward, get_state()
     
 def getEpisode(n):
@@ -181,8 +209,7 @@ def getEpisode(n):
     actions2 = np.zeros((n,4))
     values2 = []
     
-    rewards1 = np.zeros(n)
-    rewards2 = np.zeros(n)
+    rewards = np.zeros(n)
     
     current_state = get_state()
     
@@ -202,10 +229,9 @@ def getEpisode(n):
         
         reward, current_state = step(action1,action2)
 
-        rewards1[i] = reward[0]
-        rewards2[i] = reward[1]
+        rewards[i] = reward
 
-    return states, actionprobs1, actions1, values1, actionprobs2, actions2, values2, rewards1, rewards2
+    return states, actionprobs1, actions1, values1, actionprobs2, actions2, values2, rewards
 
 #torch.save(policy.agent.state_dict(), PATH)
 #policy.agent.load_state_dict(torch.load(PATH))
@@ -213,8 +239,7 @@ def getEpisode(n):
 #train(10,4000,1000,0.01,5,0.07,0.99,0.95,0.0002,2000)
 
 def train(num_actors,episode_size,episodes,beta,ppo_epochs,eps,gamma,lambd,lr,batch_size):
-    running_reward1 = 0
-    running_reward2 = 0
+    running_reward = 0
     decay = 0.9
 
     for i in range(episodes):
@@ -230,39 +255,28 @@ def train(num_actors,episode_size,episodes,beta,ppo_epochs,eps,gamma,lambd,lr,ba
         values_data2 = []
         advantage_data2 = []
 
-        episode_reward_sums1 = np.zeros(num_actors)
-        episode_reward_sums2 = np.zeros(num_actors)
+        episode_reward_sums = np.zeros(num_actors)
         for a in range(num_actors):
-            states, actionprobs1, actions1, values1, actionprobs2, actions2, values2, rewards1, rewards2 = getEpisode(episode_size)
-            episode_reward_sums1[a] = rewards1.sum()
-            episode_reward_sums2[a] = rewards2.sum()
+            states, actionprobs1, actions1, values1, actionprobs2, actions2, values2, rewards = getEpisode(episode_size)
+            episode_reward_sums[a] = rewards.sum()
             states_data.append(states)
             
             actionprobs_data1.append(torch.cat(actionprobs1).float().data)
             actions_data1.append(actions1)
             values1 = torch.cat(values1).view(-1).float().data
             values_data1.append(values1)
-            gaes1 = generalized_advantage_estimation(rewards1,values1.numpy(),gamma,lambd,values1[-1])
+            gaes1 = generalized_advantage_estimation(rewards,values1.numpy(),gamma,lambd,values1[-1])
             advantage_data1.append(gaes1)
 
             actionprobs_data2.append(torch.cat(actionprobs2).float().data)
             actions_data2.append(actions2)
             values2 = torch.cat(values2).view(-1).float().data
             values_data2.append(values2)
-            gaes2 = generalized_advantage_estimation(rewards2,values2.numpy(),gamma,lambd,values2[-1])
+            gaes2 = generalized_advantage_estimation(rewards,values2.numpy(),gamma,lambd,values2[-1])
             advantage_data2.append(gaes2)
 
-        if running_reward1 == 0:
-            running_reward1 = episode_reward_sums1.mean()
-
-        if running_reward2 == 0:
-            running_reward2 = episode_reward_sums2.mean()
-        
-        running_reward1 = decay*running_reward1 + episode_reward_sums1.mean()*(1-decay)
-        running_reward2 = decay*running_reward2 + episode_reward_sums2.mean()*(1-decay)
-        print("agent1 reward: ", running_reward1, " ", episode_reward_sums1.mean())
-        print("agent2 reward: ", running_reward2, " ", episode_reward_sums2.mean())
-        print("-----")
+        running_reward = decay*running_reward + episode_reward_sums.mean()*(1-decay)
+        print(running_reward, " ", episode_reward_sums.mean())
         
         acc_states = np.concatenate(states_data)
         
@@ -276,7 +290,7 @@ def train(num_actors,episode_size,episodes,beta,ppo_epochs,eps,gamma,lambd,lr,ba
         acc_values2 = torch.cat(values_data2)
         acc_advantage2 = np.concatenate(advantage_data2)
 
-        #policy.train(acc_states, acc_actionprobs1, acc_actions1, acc_values1, acc_advantage1,beta,ppo_epochs,eps,lr,batch_size,policy.agent1)
+        policy.train(acc_states, acc_actionprobs1, acc_actions1, acc_values1, acc_advantage1,beta,ppo_epochs,eps,lr,batch_size,policy.agent1)
         policy.train(acc_states, acc_actionprobs2, acc_actions2, acc_values2, acc_advantage2,beta,ppo_epochs,eps,lr,batch_size,policy.agent2)
     
 def generalized_advantage_estimation(rewards,values,gamma,lambd,last):
@@ -304,21 +318,17 @@ def discount(r,gamma,init):
 def agent_loop(iterations):
     game_reset()
     import time
-    r1 = 0
-    r2 = 0
     for i in range(iterations):
             _,action1,v1 = policy.agent1.get_action(get_state())
             _,action2,v2 = policy.agent2.get_action(get_state())
             
             
-            reward,_ = step(action1,action2)
-            r1 += reward[0]
-            r2 += reward[1]
-            
+            _,_ = step(action1,action2)
+                
             t.render(win)
             s1.render(win)
             s2.render(win)
-            Text(Point(100,100), r1).draw(win)
-            Text(Point(600,100), r2).draw(win)
+            enemy.render(win)
+            #Text(Point(100,100), v1.data[0][0]).draw(win)
             time.sleep(0.01)
             clear(win)

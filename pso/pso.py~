@@ -18,43 +18,156 @@ n_hidden = 200
 n_hidden2 = 200
 n_out = 4;
 
-# Init weights
-current_b1 = np.zeros((1,n_hidden))
-current_w1 = np.random.normal(0, np.sqrt(2.0/(n_inputs+n_hidden)), (n_inputs,n_hidden))
-current_b2 = np.zeros((1,n_hidden2))
-current_w2 = np.random.normal(0, np.sqrt(2.0/(n_hidden+n_hidden2)), (n_hidden,n_hidden2))
-current_b3 = np.zeros((1,n_out))
-current_w3 = np.random.normal(0, np.sqrt(2.0/(n_hidden2+n_out)), (n_hidden2,n_out))
+class Nn:
+    def __init__(self):
+        self.b1 = np.zeros((1,n_hidden))
+        self.w1 = np.zeros((n_inputs,n_hidden))
+        self.b2 = np.zeros((1,n_hidden2))
+        self.w2 = np.zeros((n_hidden,n_hidden2))
+        self.b3 = np.zeros((1,n_out))
+        self.w3 = np.zeros((n_hidden2,n_out))        
+        
+    def init_weights(self):
+        self.b1 = np.zeros((1,n_hidden))
+        self.w1 = np.random.normal(0, np.sqrt(2.0/(n_inputs+n_hidden)), (n_inputs,n_hidden))
+        self.b2 = np.zeros((1,n_hidden2))
+        self.w2 = np.random.normal(0, np.sqrt(2.0/(n_hidden+n_hidden2)), (n_hidden,n_hidden2))
+        self.b3 = np.zeros((1,n_out))
+        self.w3 = np.random.normal(0, np.sqrt(2.0/(n_hidden2+n_out)), (n_hidden2,n_out))
 
-# RMSProp
-rmsprop_b1 = np.zeros_like(current_b1)
-rmsprop_w1 = np.zeros_like(current_w1)
-rmsprop_b2 = np.zeros_like(current_b2)
-rmsprop_w2 = np.zeros_like(current_w2)
-rmsprop_b3 = np.zeros_like(current_b3)
-rmsprop_w3 = np.zeros_like(current_w3)
+    def add(self, other):
+        self.b1 += other.b1
+        self.w1 += other.w1
+        self.b2 += other.b2
+        self.w2 += other.w2
+        self.b3 += other.b3
+        self.w3 += other.w3
 
-# Forward propgation using provided weights with softmax output
-def forward(b1,w1,b2,w2,b3,w3,inp):
-    h = inp.dot(w1) + b1
-    h[h<0] = 0
-    h2 = h.dot(w2) + b2
-    h2[h2<0] = 0
-    out = h2.dot(w3) + b3
-    return np.exp(out) / (np.sum(np.exp(out)) + 1e-20)
+    def subtract(self, other):
+        self.b1 -= other.b1
+        self.w1 -= other.w1
+        self.b2 -= other.b2
+        self.w2 -= other.w2
+        self.b3 -= other.b3
+        self.w3 -= other.w3
 
-# Samples an action using weights and given state
-def get_action(b1,w1,b2,w2,b3,w3,state):
-    dist = forward(b1,w1,b2,w2,b3,w3,state).reshape(4)
-    return np.argmax(dist)
-    #return np.random.choice(4, 1, p=dist)[0]
+    def multiply_uniform(self, lower, upper):
+        self.b1 *= np.random.uniform(lower,upper,(1,n_hidden))
+        self.w1 *= np.random.uniform(lower,upper,(n_inputs,n_hidden))
+        self.b2 *= np.random.uniform(lower,upper,(1,n_hidden2))
+        self.w2 *= np.random.uniform(lower,upper,(n_hidden,n_hidden2))
+        self.b3 *= np.random.uniform(lower,upper,(1,n_out))
+        self.w3 *= np.random.uniform(lower,upper,(n_hidden2,n_out))
 
-# Sample action given state using current weights (wrapper)
-def get_action_current(state):
-    return get_action(current_b1, current_w1, current_b2, current_w2, current_b3, current_w3, state)
+    def multiply_scalar(self, scalar):
+        self.b1 *= scalar
+        self.w1 *= scalar
+        self.b2 *= scalar
+        self.w2 *= scalar
+        self.b3 *= scalar
+        self.w3 *= scalar
 
-def l2loss(b1,w1,b2,w2,b3,w3):
-    return weight_decay*(np.mean(b1*b1) + np.mean(w1*w1) + np.mean(b2*b2) + np.mean(w2*w2) + np.mean(b3*b3) + np.mean(w3*w3))
+    def copy(self, other):
+        self.b1 = np.copy(other.b1)
+        self.w1 = np.copy(other.w1)
+        self.b2 = np.copy(other.b2)
+        self.w2 = np.copy(other.w2)
+        self.b3 = np.copy(other.b3)
+        self.w3 = np.copy(other.w3)
+        
+    def forward(self, inp):
+        h = inp.dot(self.w1) + self.b1
+        h[h<0] = 0
+        h2 = h.dot(self.w2) + self.b2
+        h2[h2<0] = 0
+        out = h2.dot(self.w3) + self.b3
+        return np.exp(out) / (np.sum(np.exp(out)) + 1e-20)
+
+    # Samples an action using weights and given state
+    def get_action(self,inp):
+        dist = self.forward(inp).reshape(n_out)
+        return np.argmax(dist)
+
+    
+class Particle:
+    def __init__(self):
+        self.weights = Nn()
+        self.weights.init_weights()
+        
+        self.velocity = Nn()
+
+        self.best_score = 0
+        self.best = Nn()
+
+    def update(self, phi_cognitive, phi_social, gbest):
+        #cognivite
+        cognitive = Nn()
+        cognitive.copy(self.best)
+        cognitive.subtract(self.weights)
+        cognitive.multiply_uniform(0,phi_cognitive)
+
+        #social
+        social = Nn()
+        social.copy(gbest)
+        social.subtract(self.weights)
+        social.multiply_uniform(0,phi_social)
+
+        #merge
+        cognitive.add(social)
+        cognitive.multiply_scalar(0.73) #constriction
+
+        #update velocity and weights
+        self.velocity.add(cognitive)
+        self.weights.add(self.velocity)
+
+
+    def fitness4(self):
+        a = self.weights.get_action(np.array([1,1,1,1,1,1,1,1]))
+        b = self.weights.get_action(np.array([1,0,1,-5,14,1,0,1]))
+        c = self.weights.get_action(np.array([0,1,0,1,0,1,0,1]))
+        d = self.weights.get_action(np.array([1,1,4,1,-1,1,11,0]))
+        e = self.weights.get_action(np.array([0,1,-3,1,1,5,1,1]))
+        f = self.weights.get_action(np.array([0,0,0,0,1,5,1,-2]))
+        g = self.weights.get_action(np.array([1,0,1,0,-3,0,0,1]))
+        h = self.weights.get_action(np.array([-10,-2,0,-2,0,1,0,20]))
+        i = self.weights.get_action(np.array([1,3,3,1,3,3,3,0]))
+        j = self.weights.get_action(np.array([11,1,-3,0,0,10,-7,-3]))
+
+        fit = int(a==3) + int(b==1) + int(c==0) + int(d==2) + int(e==3) + int(f==3) + int(g==2) + int(h==0) + int(i==1) + int(j==0)
+        return fit
+
+    def evaluate(self):
+        f = self.fitness4()
+        if f > self.best_score:
+            self.best.copy(self.weights)
+        return f
+
+def Swarm:
+    def __init__(self, n_particles, phi_cognitive, phi_social):
+        self.particles = []
+        for p in range(n_particles):
+            self.particles.append(Particle())
+
+        self.best_score = 0
+        self.best = Nn()
+        
+    def update(self):
+        for p in self.particles:
+            f = p.evaluate()
+            if f > self.best_score:
+                self.best.copy(self.weights)
+            p.update(1.8,2.3,self.best)
+
+    def train(self, iters):
+        for i in range(iters):
+            print(best_score)
+            self.update()
+
+            
+        
+        
+        
+    
 
 # Eval some weights for iters steps (episode size)
 def fitness(b1,w1,b2,w2,b3,w3,iters):
@@ -160,8 +273,8 @@ def train(npop, sigma, alpha, gen, episodelengths, mutation_ratio, workers):
     for i in range(gen):
 
         if i % 5 == 0:
-            print(i, " ", fitness(current_b1, current_w1, current_b2, current_w2, current_b3, current_w3, episodelengths), " sigma: ", sigma)
-            #print(i, " ", fitness4(current_b1, current_w1, current_b2, current_w2, current_b3, current_w3), " sigma: ", sigma, " alpha: ", alpha)
+            #print(i, " ", fitness(current_b1, current_w1, current_b2, current_w2, current_b3, current_w3, episodelengths), " sigma: ", sigma)
+            print(i, " ", fitness4(current_b1, current_w1, current_b2, current_w2, current_b3, current_w3), " sigma: ", sigma, " alpha: ", alpha)
             #sigma = sigma*0.99
             #alpha = alpha*0.99
 
@@ -204,15 +317,14 @@ def train(npop, sigma, alpha, gen, episodelengths, mutation_ratio, workers):
                  current_b2 + N_b2[j],
                  current_w2 + N_w2[j],
                  current_b3 + N_b3[j],
-                 current_w3 + N_w3[j],
-                 episodelengths
+                 current_w3 + N_w3[j]
                  )
                 for j in range(npop)]
 
         l2nets = np.array([l2loss(nets[j][0], nets[j][1], nets[j][2], nets[j][3], nets[j][4], nets[j][5]) for j in range(npop)])
         
         # Calculate fitnesses of nets
-        R = np.array(pool.starmap(fitness, nets))
+        R = np.array(pool.starmap(fitness4, nets))
         
         # Print mean reward
         if i == 0:

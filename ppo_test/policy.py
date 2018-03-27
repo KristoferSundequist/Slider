@@ -35,7 +35,7 @@ class policy(nn.Module):
         actions = self.action_out(x)
         value = self.value_out(x)
         
-        return F.softmax(actions), value
+        return F.softmax(actions,dim=1), value
 
     def train(self,states,old_actionprobs,actions,values,advantages,beta,ppo_epochs,eps,learning_rate,batch_size):
         states = torch.from_numpy(states).float()

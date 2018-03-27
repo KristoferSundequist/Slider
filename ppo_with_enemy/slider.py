@@ -79,7 +79,10 @@ class Slider:
         
                     
     def render(self,win):
-        Circle(Point(self.x, self.y), self.radius).draw(win)
+        c = Circle(Point(self.x, self.y), self.radius)
+        c.setFill('green')
+        c.setOutline('green')
+        c.draw(win)
 
 class Target:
     def __init__(self,radius):
@@ -167,7 +170,7 @@ def getEpisode(n):
     return states, actionprobs, actions, values, rewards
 
 #torch.save(policy.agent.state_dict(), PATH)
-#policy.agent.load_state_dict(torch.load(PATH))
+#Policy.agent.load_state_dict(torch.load(PATH))
 
 #train(10,4000,1000,0.01,5,0.07,0.99,0.95,0.0002,2000)
 

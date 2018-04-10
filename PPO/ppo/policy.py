@@ -13,7 +13,10 @@ class policy(nn.Module):
         self.fc2 = nn.Linear(200,200)
         self.fc3 = nn.Linear(200,200)
         self.action_out = nn.Linear(200,4)
-        
+
+        #self.v1 = nn.Linear(8,200)
+        #self.v2 = nn.Linear(200,200)
+        #self.v3 = nn.Linear(200,200)
         self.value_out = nn.Linear(200,1)
         
         self.apply(self.weight_init)
@@ -33,12 +36,16 @@ class policy(nn.Module):
     def load_weights(self, name):
         self.load_state_dict(torch.load(name))
         
-    def forward(self, x):
-        x = F.selu(self.fc1(x))
+    def forward(self, state):
+        x = F.selu(self.fc1(state))
         x = F.selu(self.fc2(x))
         x = F.selu(self.fc3(x))
         
         actions = self.action_out(x)
+
+        #v = F.relu(self.v1(state))
+        #v = F.relu(self.v2(v))
+        #v = F.relu(self.v3(v))        
         value = self.value_out(x)
         
         return F.softmax(actions,dim=1), value
@@ -71,11 +78,12 @@ class policy(nn.Module):
                 surr2 = torch.clamp(ratio, 1 - eps , 1 + eps)*adv
                 action_loss = -torch.min(surr1,surr2).mean()
 
-#                value_target = Variable(values[indices]) + Variable(advantages[indices])
-#                value_loss = (new_values - value_target).pow(2).mean()
+                #value_target = Variable(values[indices]) + Variable(advantages[indices])
+                #value_target = Variable(advantages[indices])
+                #value_loss = (new_values - value_target).pow(2).mean()
             
             
-                loss = action_loss - beta*entropy.mean() 
+                loss = action_loss + value_loss - beta*entropy.mean() 
 
                 self.zero_grad()
                 loss.backward()

@@ -160,11 +160,18 @@ class Game():
         
         return reward, self.get_state()
 
-    def render(self):
+    #   1
+    # 0   2
+    #   3
+    def render(self, left, up, right, down):
         clear(win)
         self.t.render(win)
         self.s.render(win)
         self.enemy.render(win)
+        Text(Point(250,300), left).draw(win)
+        Text(Point(300,250), up).draw(win)
+        Text(Point(350,300), right).draw(win)
+        Text(Point(300,350), down).draw(win)
         
 
 

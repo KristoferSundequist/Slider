@@ -15,10 +15,10 @@ class policy(nn.Module):
         self.n_inputs = 8
         self.n_outputs = 4
         
-        self.fc1 = nn.Linear(self.n_inputs,200)
-        self.fc2 = nn.Linear(200,200)
-        self.fc3 = nn.Linear(200,200)
-        self.action_out = nn.Linear(200,self.n_outputs)
+        self.fc1 = nn.Linear(self.n_inputs,300)
+        self.fc2 = nn.Linear(300,300)
+        self.fc3 = nn.Linear(300,300)
+        self.action_out = nn.Linear(300,self.n_outputs)
         
         #self.value_features = nn.Linear(200,100)
         #self.value = nn.Linear(100,1)
@@ -47,9 +47,9 @@ class policy(nn.Module):
             m.weight.data.normal_(0.0, variance)
 
     def weighted_loss(self, inputs, target, weight):
-        batch_loss = (torch.abs(inputs - target)<1).float()*(inputs - target)**2 + (torch.abs(inputs - target)>=1).float()*(torch.abs(inputs - target) - 0.5)
-        weighted_batch_loss = weight * batch_loss 
-        return weighted_batch_loss.sum()
+        batch_loss = 0.5*(torch.abs(inputs - target)<1).float()*(inputs - target)**2 + (torch.abs(inputs - target)>=1).float()*(torch.abs(inputs - target) - 0.5)
+        weighted_batch_loss = weight * batch_loss
+        return weighted_batch_loss.mean()
     
     def forward(self, x):
         x = F.relu(self.fc1(x))
@@ -65,10 +65,7 @@ class policy(nn.Module):
 
         #return v + a - a.mean()
 
-    def get_action(self, state, eps):
-        if random.uniform(0,1) < eps:
-            return random.randint(0,3)
-        else:
-            q = self.forward(Variable(torch.from_numpy(state), volatile=True).view(1,8).float())
-            return torch.max(q,1)[1].data[0]
+    def get_action(self, state):
+        q = self.forward(Variable(torch.from_numpy(state), volatile=True).view(1,8).float())
+        return torch.max(q,1)[1].data[0]
 

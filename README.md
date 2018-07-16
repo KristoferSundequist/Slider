@@ -1,8 +1,1 @@
-Neural net pushes ball to other ball (while avoiding an enemy chasing it in the ppo_enemy version)
-
-*import slider.py
-
-*load trained weights with: policy.agent.load_state_dict(torch.load(PATH))
-
-*look at a game with: agent_loop(2000)
-
+Implementations of various deep reinforcement learning algorithms. Slider is an environment where the goal is to push a sliding puck to a reward while avoiding an enemy.

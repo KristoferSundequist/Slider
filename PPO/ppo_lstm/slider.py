@@ -158,6 +158,7 @@ def get_state():
     #return np.array([s.x/width, s.y/height, s.dx/10, s.dy/10, t.x/width, t.y/height, 0,0])
     #return np.array([s.x/width, s.y/height, s.dx/10, s.dy/10, t.x/width, t.y/height, enemy.x/width, enemy.y/height])
     return np.array([s.x/width, s.y/height, 0,0, t.x/width, t.y/height, 0,0])
+    #return np.array([s.x/width, s.y/height, 0,0, t.x/width, t.y/height, enemy.x/width, enemy.y/height])
 
 def step(action):
     s.push(action)
@@ -185,22 +186,27 @@ def getEpisode(n):
     actions = np.zeros((n,4))
     values = []
     rewards = np.zeros(n)
+    hiddens = []
     
     current_state = get_state()
     
+    hidden = agent.init_hidden()
+    
     for i in range(n):
-        actionprob, action, value = agent.get_action(current_state)
+        hiddens.append(hidden)
+        actionprob, action, value, hidden = agent.get_action(current_state, hidden)
 
         states[i] = current_state
         actions[i] = np.eye(4)[action]
         actionprobs.append(actionprob)
         values.append(value)
+
         
         reward, current_state = step(action)
 
         rewards[i] = reward
 
-    return states, actionprobs, actions, values, rewards
+    return states, actionprobs, actions, values, rewards, hiddens
 
 #torch.save(policy.agent.state_dict(), PATH)
 #policy.agent.load_state_dict(torch.load(PATH))
@@ -225,16 +231,19 @@ def train(num_actors,episode_size,episodes,beta,ppo_epochs,eps,gamma,lambd,lr,ba
         actions_data = []
         values_data = []
         returns_data = []
+        hiddens_data = []
 
         episode_reward_sums = np.zeros(num_actors)
         for a in range(num_actors):
-            states, actionprobs, actions, values, rewards = getEpisode(episode_size)
+            states, actionprobs, actions, values, rewards, hiddens = getEpisode(episode_size)
             episode_reward_sums[a] = rewards.sum()
             states_data.append(states)
             actionprobs_data.append(torch.cat(actionprobs).float().data)
             actions_data.append(actions)
             values = torch.cat(values).view(-1).float().data
             values_data.append(values)
+            hiddens_data.append(torch.cat(hiddens).float().data)
+            
             #gaes = generalized_advantage_estimation(rewards,values.numpy(),gamma,lambd,values[-1])
             gaes = discount(rewards, gamma, 0);
             returns_data.append(gaes)
@@ -250,7 +259,8 @@ def train(num_actors,episode_size,episodes,beta,ppo_epochs,eps,gamma,lambd,lr,ba
         acc_actions = np.concatenate(actions_data)
         acc_values = torch.cat(values_data)
         acc_returns = np.concatenate(returns_data)
-        agent.train(acc_states, acc_actionprobs, acc_actions, acc_values, acc_returns,beta,ppo_epochs,eps,lr,batch_size, use_critic)
+        acc_hiddens = torch.cat(hiddens_data)
+        agent.train(acc_states, acc_actionprobs, acc_actions, acc_values, acc_returns,beta,ppo_epochs,eps,lr,batch_size, use_critic, acc_hiddens)
     print("Time: ", time.time()-time_start)
     
 def generalized_advantage_estimation(rewards,values,gamma,lambd,last):
@@ -280,8 +290,9 @@ def agent_loop(iterations):
     s.reset()
     enemy.reset()
     import time
+    hidden = agent.init_hidden()
     for i in range(iterations):
-            _,action,v = agent.get_action(get_state())
+            _,action,v,hidden = agent.get_action(get_state(), hidden)
             _,_ = step(action)
                 
             t.render(win)

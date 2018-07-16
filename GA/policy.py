@@ -8,6 +8,7 @@ import time
 from random import randint
 import copy
 import slider
+from functools import *
 
 class policy(nn.Module):
     def __init__(self,sigma):
@@ -23,6 +24,15 @@ class policy(nn.Module):
         
         self.apply(self.weight_init)
 
+    def cpy(self):
+        b = copy.deepcopy(self)
+        bs = [x for x in b.parameters()]
+
+        for (i,p) in enumerate(self.parameters()):
+            bs[i].grad = p.grad.clone()
+
+        return b
+    
     def weight_init(self, m):
         if isinstance(m, nn.Linear):
             size = m.weight.size()
@@ -30,16 +40,30 @@ class policy(nn.Module):
             fan_in = size[1]
             variance = np.sqrt(2.0/(fan_in + fan_out))
             m.weight.data.normal_(0.0, variance)
-
+            
+    def mutate_param_simple(self, params):
+        dist = [0.9,0.1]
+        mask = np.random.choice(2,params.shape,p=dist)
+        params.data += self.sigma*torch.randn(params.shape)*torch.from_numpy(mask).float()
+        
+    def mutate_param_grad(self,params):
+        g = params.grad.data
+        #g = (g - g.mean())/g.std()
+        g.abs_()
+        g[g==0] = 1
+        g[g<0.01]= 0.01
+        randomness = torch.randn(params.shape).float()
+        delta = randomness/g
+        delta = (delta - delta.mean())/delta.std()
+        dist = [0.9,0.1]
+        mask = np.random.choice(2,params.shape,p=dist)
+        params.data += self.sigma*delta*torch.from_numpy(mask).float()
+            
     def mutate_layer(self,layer):
         if isinstance(layer, nn.Linear):
-            dist = [0.9,0.1]
-            maskw = np.random.choice(2,(layer.weight.shape[0], layer.weight.shape[1]),p=dist)
-            maskb = np.random.choice(2,layer.bias.shape[0],p=dist)
+            self.mutate_param_grad(layer.weight)
+            self.mutate_param_grad(layer.bias)
             
-            layer.weight.data += self.sigma*torch.randn(layer.weight.shape)*torch.from_numpy(maskw).float()
-            layer.bias.data += self.sigma*torch.randn(layer.bias.shape)*torch.from_numpy(maskb).float()
-
     def mutate(self):
         self.apply(self.mutate_layer)
         
@@ -49,13 +73,15 @@ class policy(nn.Module):
         x = F.selu(self.fc3(x))
         
         actions = self.action_out(x)
-        #return actions
-        return F.softmax(actions,dim=1)
+        return actions
+        #return F.softmax(actions,dim=1)
 
     def get_action(self, state):    
-        out = self.forward(Variable(torch.from_numpy(state), volatile=True).view(1,8).float())
-        #return torch.max(out,1)[1].data[0]
-        return out.multinomial().data[0][0]
+        out = self.forward(Variable(torch.from_numpy(state)).view(1,8).float())
+        action = torch.max(out,1)[1]
+        out[0][action].backward()
+        return action.data[0]
+        #return out.multinomial().data[0][0]
 
     def fitness2(self,iters):
         a = self.get_action(np.array([   1, 0.2,   1, 0.3,  1, 0.1, 1,   1]))
@@ -107,21 +133,29 @@ class Population:
         self.sigma = sigma
         self.Nns = [policy(sigma) for _ in range(pop_size)]
         for i in range(pop_size):
+            if i % (pop_size/10) == 0:
+                print(i/pop_size)
             self.Nns[i].fitness(self.iters)
         self.Nns.sort(key = lambda x: -x.fitness_score)
 
     # precondition: Nns sorted by decreasing fitness
     def next_generation(self, pop_size, T, iters):
         new_pop = []
-        new_pop.append(self.Nns[0])
+        c0 = self.Nns[0].cpy()
+        new_pop.append(c0)
+        c1 = self.Nns[1].cpy()
+        new_pop.append(c1)
         
-        parents = [randint(0,T-1) for _ in range(pop_size-1)]
+        parents = [randint(0,T-1) for _ in range(pop_size-2)]
         for p in parents:
-            child = copy.deepcopy(self.Nns[p])
+            child = self.Nns[p].cpy()
             child.mutate()
+            child.zero_grad()
             new_pop.append(child)
 
-        for nn in new_pop:
+        for (i,nn) in enumerate(new_pop):
+            if i % (len(new_pop)/10) == 0:
+                print(i/len(new_pop))
             nn.fitness(iters)
             
         self.Nns = new_pop
@@ -131,8 +165,8 @@ class Population:
         start = time.time()
         for i in range(n):
             self.next_generation(pop_size,T,iters)
-            print(i, self.Nns[0].fitness_score)
+            print("iter: ", i, ", best: ", pop.Nns[0].fitness_score, ", mean: ", reduce((lambda acc,x: acc+x.fitness_score), pop.Nns, 0)/len(pop.Nns))
         end = time.time()
         print(end-start)
             
-pop = Population(1000,0.01,3000)
+pop = Population(400,.1,2000)

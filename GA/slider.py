@@ -150,8 +150,8 @@ enemy = Enemy(30)
 state_space_size = 8
 
 def get_state():
-    return np.array([s.x/width, s.y/height, s.dx/10, s.dy/10, t.x/width, t.y/height, 0, 0])
-    #return np.array([s.x/width, s.y/height, s.dx/10, s.dy/10, t.x/width, t.y/height, enemy.x/width, enemy.y/height])
+    #return np.array([s.x/width, s.y/height, s.dx/10, s.dy/10, t.x/width, t.y/height, 0, 0])
+    return np.array([s.x/width, s.y/height, s.dx/10, s.dy/10, t.x/width, t.y/height, enemy.x/width, enemy.y/height])
 
 def step(action):
     s.push(action)
@@ -164,7 +164,7 @@ def step(action):
         t.reset()
         
     if intersect(s,enemy):
-        #reward -= 5
+        reward -= 5
         enemy.reset()
         
     return reward, get_state()    

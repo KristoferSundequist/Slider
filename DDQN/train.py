@@ -19,7 +19,8 @@ lagged_agent = policy.policy()
 lagged_agent.copy_weights(agent)
 
 replay_memory_size = 100000
-replay_memory = memory.ReplayMemory(replay_memory_size)
+#replay_memory = memory.ReplayMemory(replay_memory_size)
+replay_memory = memory.PrioritizedReplayMemory(replay_memory_size)
 
 # export OMP_NUM_THREADS=1
 def live(iterations, batch_size, lagg, eps, improve_flag, num_steps):
@@ -66,8 +67,8 @@ def live_loop(lives, iterations, batch_size, lagg, eps, num_steps=3):
         live(iterations, batch_size, lagg, eps, True, num_steps)
 
 def improve(batch_size, num_steps):
-    #batch,indices = replay_memory.sample(batch_size, 0.5)
-    batch = replay_memory.sample(batch_size)
+    batch,indices,probs = replay_memory.sample(batch_size, 0.5)
+    #batch = replay_memory.sample(batch_size)
     
     states = Variable(torch.FloatTensor([t.state for t in batch]))
     actions = Variable(torch.LongTensor([t.action for t in batch]))
@@ -86,15 +87,15 @@ def improve(batch_size, num_steps):
     #print("----------");
     
     # Update td errors in prioritized replay buffer 
-    #td_errors = np.abs((target_v.data - believed_qvs.data).view(-1).numpy())
-    #replay_memory.update_td_errors(indices, td_errors)
+    td_errors = np.abs((target_v.data - believed_qvs.data).view(-1).numpy())
+    replay_memory.update_td_errors(indices, td_errors)
     
-    #weights = torch.from_numpy(np.power(td_errors,-0.5)).view(-1,1)
-    #weights = Variable((weights/torch.max(weights)).float())
+    weights = torch.from_numpy(np.power(np.array(probs),-0.5)).view(-1,1)
+    weights = Variable((weights/torch.max(weights)).float())
     
-    #loss = agent.weighted_loss(believed_qvs, target_v, weights)
+    loss = agent.weighted_loss(believed_qvs, target_v, weights)
     #print(loss)
-    loss = F.smooth_l1_loss(believed_qvs, target_v)
+    #loss = F.smooth_l1_loss(believed_qvs, target_v)
 
     agent.opt.zero_grad()
     loss.backward()

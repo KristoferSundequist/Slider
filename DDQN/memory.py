@@ -30,7 +30,7 @@ class PrioritizedReplayMemory(object):
 
         indices = [subsample[i] for i in sub_indices]
         
-        return [self.memory[i] for i in indices], indices
+        return [self.memory[i] for i in indices], indices, [subsample_size*probs[i] for i in sub_indices]
         
 
 
@@ -41,7 +41,7 @@ pytorch.org/tutorials/intermediate/reinforcement_q_learning.html
 '''
         
 Transition = namedtuple('Transition',
-                        ('state', 'action', 'next_state', 'reward'))
+                    ('state', 'action', 'next_state', 'reward'))
 
 class ReplayMemory(object):
 

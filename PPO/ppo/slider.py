@@ -156,8 +156,7 @@ agent = policy.policy()
 
 def get_state():
     #return np.array([s.x/width, s.y/height, s.dx/10, s.dy/10, t.x/width, t.y/height, 0,0])
-    #return np.array([s.x/width, s.y/height, s.dx/10, s.dy/10, t.x/width, t.y/height, enemy.x/width, enemy.y/height])
-    return np.array([s.x/width, s.y/height, 0,0, t.x/width, t.y/height, 0,0])
+    return np.array([s.x/width, s.y/height, s.dx/10, s.dy/10, t.x/width, t.y/height, enemy.x/width, enemy.y/height])
 
 def step(action):
     s.push(action)
@@ -166,11 +165,11 @@ def step(action):
     
     reward = 0
     if intersect(s,t):
-        reward += 1
+        reward += .2
         t.reset()
         
     if intersect(s,enemy):
-        #reward -= 5
+        reward -= 1
         enemy.reset()
         
     return reward, get_state()
@@ -205,15 +204,9 @@ def getEpisode(n):
 #torch.save(policy.agent.state_dict(), PATH)
 #policy.agent.load_state_dict(torch.load(PATH))
 
-#train(10,4000,1000,0.01,5,0.07,0.99,0.95,0.0002,2000)
 
-#train(4,5000,1000,0.01,10,0.1,0.98,0.95,0.0002,1000)
-
-#train(2,2000,1000,0.01,10,0.2,0.98,0.95,0.0002,200)
-
-#train(10,10000,10,0.01,10,0.2,0.98,0.95,0.0002,10000)
 running_reward = None
-
+#train(20,3000,10,0.01,4,0.1,0.99,0.95,0.0001,4000, True)
 def train(num_actors,episode_size,episodes,beta,ppo_epochs,eps,gamma,lambd,lr,batch_size, use_critic):
     time_start = time.time()
     global running_reward
@@ -224,6 +217,7 @@ def train(num_actors,episode_size,episodes,beta,ppo_epochs,eps,gamma,lambd,lr,ba
         actionprobs_data = []
         actions_data = []
         values_data = []
+        advantage_data = []
         returns_data = []
 
         episode_reward_sums = np.zeros(num_actors)
@@ -235,22 +229,26 @@ def train(num_actors,episode_size,episodes,beta,ppo_epochs,eps,gamma,lambd,lr,ba
             actions_data.append(actions)
             values = torch.cat(values).view(-1).float().data
             values_data.append(values)
-            #gaes = generalized_advantage_estimation(rewards,values.numpy(),gamma,lambd,values[-1])
-            gaes = discount(rewards, gamma, 0);
-            returns_data.append(gaes)
+            gaes = generalized_advantage_estimation(rewards,values.numpy(),gamma,lambd,values[-1])
+            advantage_data.append(gaes)
+            returns = discount(rewards, gamma, values[-1]);
+            returns_data.append(returns)
 
         if running_reward == None:
             running_reward = episode_reward_sums.mean()
         else:
             running_reward = decay*running_reward + (1-decay)*episode_reward_sums.mean()
             
-        print(i/episodes, running_reward, " ", episode_reward_sums.mean())
+        
         acc_states = np.concatenate(states_data)
         acc_actionprobs = torch.cat(actionprobs_data)
         acc_actions = np.concatenate(actions_data)
         acc_values = torch.cat(values_data)
         acc_returns = np.concatenate(returns_data)
-        agent.train(acc_states, acc_actionprobs, acc_actions, acc_values, acc_returns,beta,ppo_epochs,eps,lr,batch_size, use_critic)
+        acc_advantages = np.concatenate(advantage_data)
+        a,v,e = agent.train(acc_states, acc_actionprobs, acc_actions, acc_values, acc_returns,acc_advantages,beta,ppo_epochs,eps,lr,batch_size, use_critic)
+        #a,v,e = agent.train(acc_states, acc_actionprobs, acc_actions, acc_values, acc_returns,beta,ppo_epochs,eps,lr,batch_size, use_critic)
+        print(i/episodes, running_reward, " ", episode_reward_sums.mean(), "Losses (action, value, entropy): ", a, v, e)
     print("Time: ", time.time()-time_start)
     
 def generalized_advantage_estimation(rewards,values,gamma,lambd,last):

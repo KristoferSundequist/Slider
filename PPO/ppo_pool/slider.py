@@ -3,7 +3,9 @@ import numpy as np
 import policy
 import torch
 import time
+from multiprocessing import Pool, cpu_count
 
+ncpus = cpu_count()
 
 ##########
 ## GAME ##
@@ -174,7 +176,7 @@ def step(action):
         
     return reward, get_state()
     
-def getEpisode(n):
+def getEpisode(n,agent):
     t.reset()
     s.reset()
     enemy.reset()
@@ -199,6 +201,8 @@ def getEpisode(n):
 
         rewards[i] = reward
 
+    actionprobs = torch.cat(actionprobs).float().data
+    values = torch.cat(values).view(-1).float().data
     return states, actionprobs, actions, values, rewards
 
 #torch.save(policy.agent.state_dict(), PATH)
@@ -206,54 +210,55 @@ def getEpisode(n):
 
 
 running_reward = None
-#train(20,3000,10,0.01,4,0.1,0.99,0.95,0.0001,4000, True)
-def train(num_actors,episode_size,episodes,beta,ppo_epochs,eps,gamma,lambd,lr,batch_size, use_critic):
+# export OMP_NUM_THREADS=1
+#train(20,3000,10,0.01,4,0.1,0.99,0.95,0.0001,4000, True, 2)
+def train(num_actors,episode_size,episodes,beta,ppo_epochs,eps,gamma,lambd,lr,batch_size, use_critic, num_workers):
     time_start = time.time()
     global running_reward
     decay = 0.9
-
+    
+    torch.set_num_threads(1)
+    pool = Pool(ncpus)
+    torch.set_num_threads(ncpus)
+    
     for i in range(episodes):
-        states_data = []
-        actionprobs_data = []
-        actions_data = []
-        values_data = []
-        advantage_data = []
-        returns_data = []
-
-        episode_reward_sums = np.zeros(num_actors)
         tact = time.time()
-        for a in range(num_actors):
-            states, actionprobs, actions, values, rewards = getEpisode(episode_size)
-            episode_reward_sums[a] = rewards.sum()
-            states_data.append(states)
-            actionprobs_data.append(torch.cat(actionprobs).float().data)
-            actions_data.append(actions)
-            values = torch.cat(values).view(-1).float().data
-            values_data.append(values)
-            gaes = generalized_advantage_estimation(rewards,values.numpy(),gamma,lambd,values[-1])
-            advantage_data.append(gaes)
-            returns = discount(rewards, gamma, values[-1]);
-            returns_data.append(returns)
+        
+        data = pool.starmap(getEpisode, [(episode_size,agent) for _ in range(num_actors)])
+        
+        data = list(zip(*data))
+        states_data = list(data[0])
+        actionprobs_data = list(data[1])
+        actions_data = list(data[2])
+        values_data = list(data[3])
+        rewards = list(data[4])
+        advantage_data = [generalized_advantage_estimation(rewards[i],values_data[i].numpy(),gamma,lambd,values_data[i][-1]) \
+                          for i in range(num_actors)]
 
+        
+        episode_reward_sums = np.array(rewards).sum(1)
+        meanreward = episode_reward_sums.mean()
         if running_reward == None:
-            running_reward = episode_reward_sums.mean()
+            running_reward = meanreward
         else:
-            running_reward = decay*running_reward + (1-decay)*episode_reward_sums.mean()
+            running_reward = decay*running_reward + (1-decay)*meanreward
             
         
         acc_states = np.concatenate(states_data)
         acc_actionprobs = torch.cat(actionprobs_data)
         acc_actions = np.concatenate(actions_data)
         acc_values = torch.cat(values_data)
-        acc_returns = np.concatenate(returns_data)
         acc_advantages = np.concatenate(advantage_data)
+        
         print("actTime: ", time.time()-tact)
         ttrain = time.time()
-        a,v,e = agent.train(acc_states, acc_actionprobs, acc_actions, acc_values, acc_returns,acc_advantages,beta,ppo_epochs,eps,lr,batch_size, use_critic)
+        a,v,e = agent.train(acc_states, acc_actionprobs, acc_actions, acc_values, acc_advantages,beta,ppo_epochs,eps,lr,batch_size, use_critic)
         print("trainTime: ", time.time()-ttrain)
-        #a,v,e = agent.train(acc_states, acc_actionprobs, acc_actions, acc_values, acc_returns,beta,ppo_epochs,eps,lr,batch_size, use_critic)
-        print(i/episodes, running_reward, " ", episode_reward_sums.mean(), "Losses (action, value, entropy): ", a, v, e)
+        #print(i+1, "/", episodes, running_reward, " ", meanreward, "Losses (action, value, entropy): ", a, v, e)
+        print("Episode: ", i+1, "/", episodes, " Rewards: ", running_reward, " ", meanreward)
     print("Time: ", time.time()-time_start)
+    pool.close()
+    pool.join()
     
 def generalized_advantage_estimation(rewards,values,gamma,lambd,last):
     rewards = rewards.astype(float)

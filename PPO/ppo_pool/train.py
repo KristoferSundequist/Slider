@@ -10,7 +10,7 @@ from torch.utils.data.sampler import BatchSampler, SubsetRandomSampler
 ncpus = cpu_count()
 width = 700
 height = 700
-agent = policy.policy()
+agent = policy.policy(Game.state_space_size, Game.action_space_size)
 optimizer = torch.optim.Adam(agent.parameters(), lr=3e-4, eps=1e-5)
     
 def getEpisode(n,agent):
@@ -21,11 +21,14 @@ def getEpisode(n,agent):
     actions = np.zeros((n,game.action_space_size))
     values = []
     rewards = np.zeros(n)
+    hiddens = []
     
     current_state = game.get_state()
+    hidden = agent.init_hidden()
     
     for i in range(n):
-        actionprob, action, value = agent.get_action(current_state)
+        hiddens.append(hidden)
+        actionprob, action, value, hidden = agent.get_action(current_state, hidden)
 
         states[i] = current_state
         actions[i] = np.eye(game.action_space_size)[action]
@@ -38,7 +41,8 @@ def getEpisode(n,agent):
 
     actionprobs = torch.cat(actionprobs).float().data
     values = torch.cat(values).view(-1).float().data
-    return states, actionprobs, actions, values, rewards
+    hiddens = torch.cat(hiddens).float().data
+    return states, actionprobs, actions, values, rewards, hiddens
 
 #torch.save(policy.agent.state_dict(), PATH)
 #policy.agent.load_state_dict(torch.load(PATH))
@@ -68,6 +72,7 @@ def train(num_actors, episode_size, episodes, beta, ppo_epochs, eps, gamma, lamb
         actions_data = list(data[2])
         values_data = list(data[3])
         rewards = list(data[4])
+        hiddens = list(data[5])
         advantage_data = [generalized_advantage_estimation(rewards[i],values_data[i].numpy(),gamma,lambd,values_data[i][-1]) \
                           for i in range(num_actors)]
 
@@ -84,10 +89,12 @@ def train(num_actors, episode_size, episodes, beta, ppo_epochs, eps, gamma, lamb
         acc_actions = np.concatenate(actions_data)
         acc_values = torch.cat(values_data)
         acc_advantages = np.concatenate(advantage_data)
+        acc_hiddens = torch.cat(hiddens)
         
         print("actTime: ", time.time()-tact)
         ttrain = time.time()
-        a,v,e = ppo(agent, acc_states, acc_actionprobs, acc_actions, acc_values, acc_advantages,beta,ppo_epochs,eps,lr,batch_size)
+        a,v,e = ppo(agent, acc_states, acc_actionprobs, acc_actions, acc_values, acc_advantages, acc_hiddens, \
+            beta, ppo_epochs, eps, lr, batch_size)
         print("trainTime: ", time.time()-ttrain)
         #print(i+1, "/", episodes, running_reward, " ", meanreward, "Losses (action, value, entropy): ", a, v, e)
         print("Episode: ", i+1, "/", episodes, " Rewards: ", running_reward, " ", meanreward)
@@ -95,7 +102,7 @@ def train(num_actors, episode_size, episodes, beta, ppo_epochs, eps, gamma, lamb
     pool.close()
     pool.join()
 
-def ppo(agent,states,old_actionprobs,actions,values,advantages,beta,ppo_epochs,eps,learning_rate,batch_size,max_grad_norm=0.5):
+def ppo(agent,states,old_actionprobs,actions,values,advantages,hiddens,beta,ppo_epochs,eps,learning_rate,batch_size,max_grad_norm=0.5):
     optimizer.learning_rate = learning_rate
     states = torch.from_numpy(states).float()
     actions = torch.from_numpy(actions).float()
@@ -106,41 +113,52 @@ def ppo(agent,states,old_actionprobs,actions,values,advantages,beta,ppo_epochs,e
     normalized_advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-08)
     log_action_loss = log_value_loss = log_entropy_loss = 0
 
+    rec_length = 128
     for _ in range(ppo_epochs):
-        sampler = BatchSampler(SubsetRandomSampler(range(len(states))), batch_size,drop_last=False)
-        for indices in sampler:
-            indices = torch.LongTensor(indices)
-            taken_actions = actions[indices]
+        sampler = BatchSampler(SubsetRandomSampler(range(0, len(states)-rec_length, rec_length)), batch_size,drop_last=True)
+        for start_indices in sampler:
+            start_indices = torch.LongTensor(start_indices)
+            total_loss = 0
+
+            for i in range(rec_length):
+                indices = start_indices + i
+                taken_actions = actions[indices]
+
+                new_actionprobs, new_values, new_hiddens = agent.forward(states[indices], hiddens[indices].squeeze().unsqueeze(0))
+                if i < rec_length -1:
+                    hiddens[indices+1] = new_hiddens.squeeze().unsqueeze(1).detach()
+                
+                new_action = torch.sum(new_actionprobs*taken_actions,1)
+
+                old_actionprobs_batch = old_actionprobs[indices]
+                old_action_batch = torch.sum(old_actionprobs_batch*taken_actions,1)
+
+                # Policy loss            
+                entropy = -torch.sum(new_actionprobs * torch.log(new_actionprobs + 1e-08),1)
+                ratio = new_action/old_action_batch
+                adv = normalized_advantages[indices]
+                surr1 = ratio*adv
+                surr2 = torch.clamp(ratio, 1 - eps , 1 + eps)*adv
+                action_loss = -torch.min(surr1,surr2).mean()
+
+                # Value loss
+                old_vals = values[indices]
+                value_target = returns[indices]
+                value_loss1 = (new_values.view(-1) - value_target).pow(2)
+                clipped = old_vals + torch.clamp(new_values.view(-1) - old_vals, -eps, eps)
+                value_loss2 = (clipped - value_target).pow(2)
+                value_loss = torch.max(value_loss1, value_loss2).mean()
+
+                loss = action_loss + .5*value_loss - beta*entropy.mean()
+                total_loss += loss
+
+            total_loss /= rec_length
             
-            new_actionprobs, new_values = agent.forward(states[indices])
-            new_action = torch.sum(new_actionprobs*taken_actions,1)
-            
-            old_actionprobs_batch = old_actionprobs[indices]
-            old_action_batch = torch.sum(old_actionprobs_batch*taken_actions,1)
-
-            # Policy loss            
-            entropy = -torch.sum(new_actionprobs * torch.log(new_actionprobs + 1e-08),1)
-            ratio = new_action/old_action_batch
-            adv = normalized_advantages[indices]
-            surr1 = ratio*adv
-            surr2 = torch.clamp(ratio, 1 - eps , 1 + eps)*adv
-            action_loss = -torch.min(surr1,surr2).mean()
-
-            # Value loss
-            old_vals = values[indices]
-            value_target = returns[indices]
-            value_loss1 = (new_values.view(-1) - value_target).pow(2)
-            clipped = old_vals + torch.clamp(new_values.view(-1) - old_vals, -eps, eps)
-            value_loss2 = (clipped - value_target).pow(2)
-            value_loss = torch.max(value_loss1, value_loss2).mean()
-
-            loss = action_loss + .5*value_loss - beta*entropy.mean()
-
             log_action_loss += action_loss
             log_value_loss += value_loss
             log_entropy_loss += entropy.mean()
             agent.zero_grad()
-            loss.backward()
+            total_loss.backward()
             torch.nn.utils.clip_grad_norm_(agent.parameters(), max_grad_norm)
             optimizer.step()
     num_updates = ppo_epochs + int(len(states)/batch_size)
@@ -177,9 +195,10 @@ def agent_loop(iterations):
     win = GraphWin("canvas", width, height)
     win.setBackground('lightskyblue')
     game = Game(width,height)
+    hidden = agent.init_hidden()
     import time
     for i in range(iterations):
-        _,action,v = agent.get_action(game.get_state())
+        _, action, v, hidden = agent.get_action(game.get_state(), hidden)
         _,_ = game.step(action)
             
         game.render(win)

@@ -133,7 +133,8 @@ class Enemy:
             self.y += 1
 
 class Game:
-    state_space_size = 6
+    # state_space_size = 6
+    state_space_size = 8
     action_space_size = 4
     
     def __init__(self, width, height):
@@ -147,9 +148,17 @@ class Game:
         return slider.radius + target.radius > np.sqrt(np.power(slider.x - target.x, 2) + np.power(slider.y - target.y, 2))
 
     def get_state(self):
-        return np.array([self.s.x/self.width, self.s.y/self.height, self.t.x/self.width, self.t.y/self.height, self.enemy.x/self.width, self.enemy.y/self.height])
-        #return np.array([self.s.x/self.width, self.s.y/self.height, self.s.dx/10, self.s.dy/10, self.t.x/self.width, \
-         #   self.t.y/self.height, self.enemy.x/self.width, self.enemy.y/self.height])
+        # return np.array([self.s.x/self.width, self.s.y/self.height, self.t.x/self.width, self.t.y/self.height, self.enemy.x/self.width, self.enemy.y/self.height])
+        return np.array([
+            self.s.x/self.width,
+            self.s.y/self.height,
+            self.s.dx/10,
+            self.s.dy/10,
+            self.t.x/self.width,
+            self.t.y/self.height,
+            self.enemy.x/self.width,
+            self.enemy.y/self.height
+        ])
 
     def render(self, win):
         self.t.render(win)

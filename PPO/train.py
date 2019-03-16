@@ -51,8 +51,9 @@ torch.multiprocessing.set_sharing_strategy('file_system')
 running_reward = None
 
 # export OMP_NUM_THREADS=1
-# train(24,6000,20,0.02,3,0.1,0.99,0.95,0.0003,6000, True)
-def train(num_actors, episode_size, episodes, beta, ppo_epochs, eps, gamma, lambd, lr, batch_size):
+#train(20,6000,20,0.03,3,0.1,0.99,0.95,0.0003,20, 128)
+def train(num_actors, episode_size, episodes, beta, ppo_epochs, eps, gamma, lambd, lr, batch_size, rec_length):
+    assert num_actors*episode_size > batch_size*rec_length, "num_actors*episode_size > batch_size*rec_length"
     time_start = time.time()
     global running_reward
     decay = 0.9
@@ -94,7 +95,7 @@ def train(num_actors, episode_size, episodes, beta, ppo_epochs, eps, gamma, lamb
         print("actTime: ", time.time()-tact)
         ttrain = time.time()
         a,v,e = ppo(agent, acc_states, acc_actionprobs, acc_actions, acc_values, acc_advantages, acc_hiddens, \
-            beta, ppo_epochs, eps, lr, batch_size)
+            beta, ppo_epochs, eps, lr, batch_size, rec_length, 0.5)
         print("trainTime: ", time.time()-ttrain)
         #print(i+1, "/", episodes, running_reward, " ", meanreward, "Losses (action, value, entropy): ", a, v, e)
         print("Episode: ", i+1, "/", episodes, " Rewards: ", running_reward, " ", meanreward)
@@ -102,7 +103,7 @@ def train(num_actors, episode_size, episodes, beta, ppo_epochs, eps, gamma, lamb
     pool.close()
     pool.join()
 
-def ppo(agent,states,old_actionprobs,actions,values,advantages,hiddens,beta,ppo_epochs,eps,learning_rate,batch_size,max_grad_norm=0.5):
+def ppo(agent,states,old_actionprobs,actions,values,advantages,hiddens,beta,ppo_epochs,eps,learning_rate,batch_size,rec_length,max_grad_norm=0.5):
     optimizer.learning_rate = learning_rate
     states = torch.from_numpy(states).float()
     actions = torch.from_numpy(actions).float()
@@ -113,7 +114,6 @@ def ppo(agent,states,old_actionprobs,actions,values,advantages,hiddens,beta,ppo_
     normalized_advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-08)
     log_action_loss = log_value_loss = log_entropy_loss = 0
 
-    rec_length = 128
     for _ in range(ppo_epochs):
         sampler = BatchSampler(SubsetRandomSampler(range(0, len(states)-rec_length, rec_length)), batch_size,drop_last=True)
         for start_indices in sampler:
@@ -162,7 +162,8 @@ def ppo(agent,states,old_actionprobs,actions,values,advantages,hiddens,beta,ppo_
             torch.nn.utils.clip_grad_norm_(agent.parameters(), max_grad_norm)
             optimizer.step()
     num_updates = ppo_epochs + int(len(states)/batch_size)
-    return (log_action_loss/num_updates).item(),(log_value_loss/num_updates).item(),(log_entropy_loss/num_updates).item()
+    #return (log_action_loss/num_updates).item(),(log_value_loss/num_updates).item(),(log_entropy_loss/num_updates).item()
+    return 0,0,0
     
 def generalized_advantage_estimation(rewards,values,gamma,lambd,last):
     rewards = rewards.astype(float)

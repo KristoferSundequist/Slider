@@ -3,18 +3,26 @@ import numpy as np
 import policy
 import torch
 import time
+import copy
 from multiprocessing import Pool, cpu_count
 from slider import *
 from torch.utils.data.sampler import BatchSampler, SubsetRandomSampler
 
 ncpus = cpu_count()
-width = 700
-height = 700
-agent = policy.policy(Game.state_space_size, Game.action_space_size)
+width = 1500
+height = 1000
+agent = policy.policy(Game2.state_space_size, Game2.action_space_size)
 optimizer = torch.optim.Adam(agent.parameters(), lr=3e-4, eps=1e-5)
-    
+
+device = "cuda:0"
+#device = "cpu"
+
+print("DEVICE:", device)
+
+agent = agent.to(device)
+
 def getEpisode(n,agent):
-    game = Game(width,height)
+    game = Game2(width,height)
     
     states = np.zeros((n, game.state_space_size))
     actionprobs = []
@@ -51,7 +59,7 @@ torch.multiprocessing.set_sharing_strategy('file_system')
 running_reward = None
 
 # export OMP_NUM_THREADS=1
-#train(20,6000,20,0.03,3,0.1,0.99,0.95,0.0003,20, 128)
+#train(20,6000,20,0.02,3,0.1,0.99,0.95,0.0003,20, 128)
 def train(num_actors, episode_size, episodes, beta, ppo_epochs, eps, gamma, lambd, lr, batch_size, rec_length):
     assert num_actors*episode_size > batch_size*rec_length, "num_actors*episode_size > batch_size*rec_length"
     time_start = time.time()
@@ -61,11 +69,13 @@ def train(num_actors, episode_size, episodes, beta, ppo_epochs, eps, gamma, lamb
     torch.set_num_threads(1)
     pool = Pool(ncpus)
     torch.set_num_threads(ncpus)
+
     
     for i in range(episodes):
         tact = time.time()
         
-        data = pool.starmap(getEpisode, [(episode_size,agent) for _ in range(num_actors)])
+        cpu_agent = copy.deepcopy(agent).to('cpu')
+        data = pool.starmap(getEpisode, [(episode_size,cpu_agent) for _ in range(num_actors)])
         
         data = list(zip(*data))
         states_data = list(data[0])
@@ -105,10 +115,12 @@ def train(num_actors, episode_size, episodes, beta, ppo_epochs, eps, gamma, lamb
 
 def ppo(agent,states,old_actionprobs,actions,values,advantages,hiddens,beta,ppo_epochs,eps,learning_rate,batch_size,rec_length,max_grad_norm=0.5):
     optimizer.learning_rate = learning_rate
-    states = torch.from_numpy(states).float()
-    actions = torch.from_numpy(actions).float()
-    advantages = torch.from_numpy(advantages).float()
-    old_actionprobs = old_actionprobs.float()
+    states = torch.from_numpy(states).float().to(device)
+    old_actionprobs = old_actionprobs.float().to(device)
+    actions = torch.from_numpy(actions).float().to(device)
+    values = values.to(device)
+    advantages = torch.from_numpy(advantages).float().to(device)
+    hiddens = hiddens.to(device)
     
     returns = values+advantages
     normalized_advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-08)
@@ -195,11 +207,13 @@ def clear(win):
 def agent_loop(iterations):
     win = GraphWin("canvas", width, height)
     win.setBackground('lightskyblue')
-    game = Game(width,height)
-    hidden = agent.init_hidden()
+
+    cpu_agent = copy.deepcopy(agent).cpu()
+    game = Game2(width,height)
+    hidden = cpu_agent.init_hidden()
     import time
     for i in range(iterations):
-        _, action, v, hidden = agent.get_action(game.get_state(), hidden)
+        _, action, v, hidden = cpu_agent.get_action(game.get_state(), hidden)
         _,_ = game.step(action)
             
         game.render(win)

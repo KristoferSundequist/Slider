@@ -103,10 +103,11 @@ class Target:
             self.y += 1
 
 class Enemy:
-    def __init__(self,radius,width, height):
+    def __init__(self,radius,speed,width, height):
         self.x = np.random.randint(width)
         self.y = np.random.randint(height)
         self.radius = radius
+        self.speed = speed
         self.width = width
         self.height = height
     
@@ -123,14 +124,18 @@ class Enemy:
 
     def update(self,sliderx,slidery):
         if self.x > sliderx:
-            self.x -= 1
+            self.x -= self.speed
         else:
-            self.x += 1
+            self.x += self.speed
 
         if self.y > slidery:
-            self.y -= 1
+            self.y -= self.speed
         else:
-            self.y += 1
+            self.y += self.speed
+
+##########################################
+## GAME 1 ################################
+##########################################
 
 class Game:
     # state_space_size = 6
@@ -140,7 +145,7 @@ class Game:
     def __init__(self, width, height):
         self.s = Slider(width, height)
         self.t = Target(50, width, height)
-        self.enemy = Enemy(30,width, height)
+        self.enemy = Enemy(30,1,width, height)
         self.width = width
         self.height = height
 
@@ -178,5 +183,67 @@ class Game:
         if self.intersect(self.s,self.enemy):
             reward -= 1
             self.enemy.reset()
+
+        return reward, self.get_state()
+
+##########################################
+## GAME 2 ################################
+##########################################
+
+class Game2:
+    # state_space_size = 6
+    state_space_size = 10
+    action_space_size = 4
+    
+    def __init__(self, width, height):
+        self.s = Slider(width, height)
+        self.t = Target(50, width, height)
+        self.enemy = Enemy(30,1,width, height)
+        self.enemy2 = Enemy(20,3,width, height)
+        self.width = width
+        self.height = height
+
+    def intersect(self, slider, target):
+        return slider.radius + target.radius > np.sqrt(np.power(slider.x - target.x, 2) + np.power(slider.y - target.y, 2))
+
+    def get_state(self):
+        # return np.array([self.s.x/self.width, self.s.y/self.height, self.t.x/self.width, self.t.y/self.height, self.enemy.x/self.width, self.enemy.y/self.height])
+        return np.array([
+            self.s.x/self.width,
+            self.s.y/self.height,
+            self.s.dx/10,
+            self.s.dy/10,
+            self.t.x/self.width,
+            self.t.y/self.height,
+            self.enemy.x/self.width,
+            self.enemy.y/self.height,
+            self.enemy2.x/self.width,
+            self.enemy2.y/self.height
+        ])
+
+    def render(self, win):
+        self.t.render(win)
+        self.s.render(win)
+        self.enemy.render(win)
+        self.enemy2.render(win)
+
+    def step(self, action):
+        self.s.push(action)
+        self.s.update()
+        self.enemy.update(self.s.x,self.s.y)
+        self.enemy2.update(self.s.x,self.s.y)
+
+        reward = 0
+        if self.intersect(self.s, self.t):
+            reward += .2
+            self.t.reset()
+
+        if self.intersect(self.s,self.enemy):
+            reward -= 1
+            self.enemy.reset()
+
+        if self.intersect(self.s,self.enemy2):
+            reward -= 1
+            self.enemy2.reset()
 
         return reward, self.get_state()

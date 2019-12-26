@@ -37,7 +37,7 @@ class policy(nn.Module):
         torch.save(self.state_dict(), name)
 
     def load_weights(self, name):
-        self.load_state_dict(torch.load(name))
+        self.load_state_dict(torch.load(name, map_location="cpu"))
         
     def forward(self, state, hidden):
         x = F.relu(self.shared(state))

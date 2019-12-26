@@ -11,18 +11,17 @@ from torch.utils.data.sampler import BatchSampler, SubsetRandomSampler
 ncpus = cpu_count()
 width = 1500
 height = 1000
-agent = policy.policy(Game2.state_space_size, Game2.action_space_size)
+agent = policy.policy(Game.state_space_size, Game.action_space_size)
 optimizer = torch.optim.Adam(agent.parameters(), lr=3e-4, eps=1e-5)
 
-device = "cuda:0"
-#device = "cpu"
+device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
 print("DEVICE:", device)
 
 agent = agent.to(device)
 
 def getEpisode(n,agent):
-    game = Game2(width,height)
+    game = Game(width,height)
     
     states = np.zeros((n, game.state_space_size))
     actionprobs = []
@@ -209,7 +208,7 @@ def agent_loop(iterations):
     win.setBackground('lightskyblue')
 
     cpu_agent = copy.deepcopy(agent).cpu()
-    game = Game2(width,height)
+    game = Game(width,height)
     hidden = cpu_agent.init_hidden()
     import time
     for i in range(iterations):

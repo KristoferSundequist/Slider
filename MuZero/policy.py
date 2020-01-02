@@ -15,10 +15,14 @@ class Representation(nn.Module):
                  inner_size: int):
         super(Representation, self).__init__()
 
+        self.num_states = num_states
         self.state_space_size = state_space_size
 
         self.w1 = nn.Linear(num_states * state_space_size, 200)
         self.w2 = nn.Linear(200, inner_size)
+
+    def prepare_states(self, initial_states):
+        return torch.Tensor(np.reshape(np.array(initial_states), [-1, self.num_states*self.state_space_size]))
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         x = F.relu(self.w1(input))
@@ -37,6 +41,45 @@ def test_repr_forward_shape():
     inner_states = r.forward(real_states)
     assert inner_states.shape == torch.Size([batch_size, inner_size])
 
+
+def test_prepare_states():
+    num_states = 2
+    state_space_size = 9
+    inner_size = 50
+    batch_size = 13
+
+    r = Representation(num_states, state_space_size, inner_size)
+    initial_states = [[np.ones(state_space_size) for i in range(num_states)] for _ in range(batch_size)]
+
+    prepared_states = r.prepare_states(initial_states)
+
+    assert prepared_states.shape == torch.Size([batch_size, num_states * state_space_size])
+
+
+def test_prepare_states_and_forward():
+    num_states = 2
+    state_space_size = 7
+    inner_size = 50
+    batch_size = 1
+
+    r = Representation(num_states, state_space_size, inner_size)
+    initial_states = [[np.random.rand(state_space_size) for i in range(num_states)] for _ in range(batch_size)]
+    prepared_states = r.prepare_states(initial_states)
+    inner_states = r.forward(prepared_states)
+
+    assert inner_states.shape == torch.Size([batch_size, inner_size])
+
+def test_prepare_states_single():
+    num_states = 2
+    state_space_size = 7
+    inner_size = 50
+
+    r = Representation(num_states, state_space_size, inner_size)
+    initial_states = [np.random.rand(state_space_size) for i in range(num_states)]
+    prepared_states = r.prepare_states(initial_states)
+    inner_states = r.forward(prepared_states)
+
+    assert inner_states.shape == torch.Size([1, inner_size])
 
 '''
 
@@ -60,7 +103,7 @@ class Dynamics(nn.Module):
     def forward(self, state: torch.Tensor,
                 action: torch.Tensor) -> (torch.Tensor, torch.Tensor):
         joint = torch.cat((state, action), 1)
-        x = F.relu(self.w1(joint)) # Probably change to recurrent layer later
+        x = F.relu(self.w1(joint))
         reward = self.reward_out(x)
         next_state = self.state_out(x)
         return reward, next_state
@@ -81,7 +124,6 @@ def test_dynamics_forward_shape():
     assert next_states.shape == torch.Size([batch_size, inner_size])
 
 
-
 '''
 
 PREDICTION
@@ -96,16 +138,17 @@ class Prediction(nn.Module):
         self.inner_size = inner_size
         self.action_space_size = action_space_size
 
-        self.w1 = nn.Linear(inner_size, 200)
+        self.w1 = nn.Linear(inner_size, 80)
+        self.w2 = nn.Linear(80, 80)
 
-        self.policy_out = nn.Linear(200, action_space_size)
-        self.value_out = nn.Linear(200, 1)
+        self.policy_out = nn.Linear(80, action_space_size)
+        self.value_out = nn.Linear(80, 1)
 
     def forward(self, state: torch.Tensor) -> (torch.Tensor, torch.Tensor):
-        x = F.relu(self.w1(state)) # Probably change to recurrent layer later
+        x = F.relu(self.w1(state))
         policy = F.softmax(self.policy_out(x), dim=1)
         value = self.value_out(x)
-        return policy, value #softmax
+        return policy, value
 
 
 def test_prediction_forward_shape():
@@ -123,9 +166,11 @@ def test_prediction_forward_shape():
 
 ######################
 
+
 '''
 INTEGRATION TEST
 '''
+
 
 def test_together_shapes():
     num_initial_states = 13
@@ -138,7 +183,11 @@ def test_together_shapes():
     d = Dynamics(inner_size, action_space_size)
     p = Prediction(inner_size, action_space_size)
 
-    initial_states = torch.rand(batch_size, num_initial_states * state_space_size)
+    raw_states = [[np.random.rand(state_space_size) \
+        for i in range(num_initial_states)] \
+            for _ in range(batch_size)]
+    initial_states = r.prepare_states(raw_states)
+
     initial_inner_states = r.forward(initial_states)
 
     actions = torch.rand(batch_size, action_space_size)
@@ -152,7 +201,3 @@ def test_together_shapes():
     assert value.shape == torch.Size([batch_size, 1])
     assert rewards2.shape == torch.Size([batch_size, 1])
     assert third_inner_states.shape == torch.Size([batch_size, inner_size])
-
-
-
-

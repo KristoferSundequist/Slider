@@ -18,11 +18,14 @@ class Episode:
         self.search_policies.append(search_policy)
         self.search_values.append(search_value)
 
-    def make_targets(self, state_index: int, num_unroll_steps: int, discount: float, bootstrap_steps: int = 10) -> [(float, float, [float], bool)]:
+    # returns [(value, reward, action, search_policy, isDone)]
+    def make_targets(self, state_index: int, num_unroll_steps: int, discount: float, bootstrap_steps: int = 10) \
+            -> [(float, float, int, [float], bool)]:
+
         # The value target is the discounted root value of the search tree N steps
         # into the future, plus the discounted sum of all rewards until then.
         targets = []
-        for current_index in range(state_index, state_index + num_unroll_steps + 1):
+        for current_index in range(state_index, state_index + num_unroll_steps):
             bootstrap_index = current_index + bootstrap_steps
             if bootstrap_index < len(self.states):
                 value = self.search_values[bootstrap_index] * discount**bootstrap_steps
@@ -33,17 +36,12 @@ class Episode:
                 value += reward * discount**i  # pytype: disable=unsupported-operands
 
             if current_index < len(self.states):
-                targets.append((value, self.rewards[current_index],
+                targets.append((value, self.rewards[current_index], self.actions[current_index],
                                 self.search_policies[current_index], False))
             else:
                 # States past the end of games are treated as absorbing states.
-                targets.append((0, 0, [], True))
+                targets.append((0, 0, 0, [], True))
         return targets
-
-    def sample_batch(self, batch_size: int):
-        inds = random.sample(range(len(self.states)), batch_size)
-        batch = [(self.states[i], self.rewards[i], self.search_policies[i], self.search_values[i]) for i in inds]
-        return batch
 
     def gather_initial_state(self, state_index: int, num_initial_states: int) -> [np.ndarray]:
         initial_states = [np.zeros(self.state_space_size)
@@ -56,10 +54,14 @@ class Episode:
 
         return initial_states
 
-    def sample(self):
-        i = np.random.randint(len(self.states))
-        return
+    def sample(self, num_initial_states: int, num_unroll_steps: int, discount: float) \
+            -> ([np.ndarray], [(float, float, int, [float], bool)]):
 
+        state_index = np.random.randint(len(self.states))
+        initial_states = self.gather_initial_state(state_index, num_initial_states)
+        targets = self.make_targets(state_index, num_unroll_steps, discount)
+
+        return (initial_states, targets)
 
 '''
 
@@ -79,7 +81,7 @@ def test_gather_initial_state():
     assert np.array_equal(initial_states, [np.array([i, i, i]) for i in [7.0, 8.0, 9.0, 10.0]])
 
 
-def test_gather_initial_state_with_zero_pad():
+def test_gather_initial_state_with_zero_pad_for_start():
     e = Episode(3)
 
     for i in range(100):
@@ -106,12 +108,44 @@ def test_make_target():
             e.add_transition(1, 2, np.array([i, i, i]), [0.1, 0.2, 0.3, 0.4], 0)
         elif i == 55:
             e.add_transition(0, 2, np.array([i, i, i]), [0.1, 0.2, 0.3, 0.4], 0.5)
-        elif i == 100:
-            e.add_transition(1, 2, np.array([i, i, i]), [0.1, 0.2, 0.3, 0.4], 0)
+        elif i == 96:
+            e.add_transition(0, 3, np.array([i, i, i]), [0.1, 0.2, 0.3, 0.4], 3)
+        elif i == 98:
+            e.add_transition(0, 2, np.array([i, i, i]), [0.1, 0.2, 0.3, 0.4], 3)
+        elif i == 99:
+            e.add_transition(1, 2, np.array([i, i, i]), [0.1, 0.2, 0.3, 0.4], 1)
         else:
             e.add_transition(0, 2, np.array([i, i, i]), [0.1, 0.2, 0.3, 0.4], 0)
-    
-    targets = e.make_targets(43, 10, 0.99)
+
+    targets = e.make_targets(85, 20, 0.99)  # check out of bound
     for t in targets:
         print(t)
+    assert len(targets) == 20
+    assert targets[11][2] == 3
+    assert all([targets[i][4] for i in range(15, 20)])  # end states are donestates
     assert True
+
+
+'''
+
+TEST sample()
+
+'''
+
+
+def test_sample():
+    num_initial_states = 8
+    num_unroll_steps = 20
+
+    e = Episode(3)
+
+    for i in range(100):
+        e.add_transition(0, 2, np.array([i, i, i]), [0.1, 0.2, 0.3, 0.4], 0)
+
+    (initial, targets) = e.sample(num_initial_states, num_unroll_steps, .99) #targets[i] : (value, reward, action, search_policy, isDone)
+
+    assert len(initial) == num_initial_states
+    assert len(targets) == num_unroll_steps
+    assert targets[0][2] == 2 
+
+

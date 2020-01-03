@@ -28,15 +28,16 @@ class Node:
         ucbs = [self.upper_confidence_bound(a)
                 for a in range(self.action_space_size)]
         return np.argmax(ucbs)
-    
-    def get_search_policy(self) -> [float]:
-        sum_visits = sum(self.visit_counts)
-        return [self.visit_counts[a]/sum_visits for a in range(self.action_space_size)]
+
+    def get_search_policy(self, temperature=1) -> [float]:
+        temperature = 1/temperature
+        total_visits = sum(map(lambda v: v**temperature, self.visit_counts))
+        probs = list(map(lambda k: (k**temperature)/total_visits, self.visit_counts))
+        return probs
 
     def value(self) -> float:
         p = self.get_search_policy()
         return sum([self.mean_values[a] * p[a] for a in range(self.action_space_size)])
-
 
     def expand(self, a: int, r: float, node):
         self.rewards[a] = r
@@ -152,8 +153,9 @@ TEST VALUE
 def test_get_value():
     n = Node(None, 4, np.array([1.0e-50, 0.3, 0.4, 0.2]))
     n.mean_values = [0.23, 0.1, 0.54, 0.9]
-    n.visit_counts = np.array([1,1,3,5])
+    n.visit_counts = np.array([1, 1, 3, 5])
     assert n.value() == sum([0.23*0.1, 0.1*0.1, 0.54*0.3, 0.9*0.5])
+
 
 '''
 
@@ -161,7 +163,8 @@ TEST SEARCH POLICY
 
 '''
 
+
 def test_get_search_policy():
     n = Node(None, 4, np.array([1.0e-50, 0.3, 0.4, 0.2]))
-    n.visit_counts = np.array([1,1,3,5])
-    assert n.get_search_policy() == [.1,.1,.3,.5]
+    n.visit_counts = np.array([1, 1, 3, 5])
+    assert n.get_search_policy() == [.1, .1, .3, .5]

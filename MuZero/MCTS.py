@@ -67,9 +67,7 @@ def MCTS(
         return root
 
 def sample_action(root: Node, temperature: float = 1) -> int:
-    temperature = 1/temperature
-    total_visits = sum(map(lambda v: v**temperature, root.visit_counts))
-    probs = list(map(lambda k: (k**temperature)/total_visits, root.visit_counts))
+    probs = root.get_search_policy(temperature)
     return np.random.choice(len(probs), 1, p=probs).item()
 
 def get_best_action(root: Node) -> int:
@@ -193,4 +191,4 @@ def test_print_tree_MCTS():
 
     root = MCTS(raw_states, r, d, p, action_space_size, 301, 0.99)
     print_tree(root, 0, 0)
-    assert False
+    assert True

@@ -56,8 +56,8 @@ def MCTS(
     with torch.no_grad():
         inner = representation.forward(representation.prepare_states(initial_states))
         policy, value = prediction.forward(inner)
-        #root = Node(inner, action_space_size, policy.numpy().squeeze())
-        root = Node(inner, action_space_size, np.array([0.1,0.1,0.1,0.7]))
+        root = Node(inner, action_space_size, policy.numpy().squeeze())
+        #root = Node(inner, action_space_size, np.array([0.1,0.1,0.1,0.7]))
 
         for i in range(num_simulations):
             (path, actions, value) = forward_simulation(root, dynamics,

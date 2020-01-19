@@ -10,6 +10,7 @@ class Episode:
         self.search_policies = []
         self.search_values = []
         self.state_space_size = state_space_size
+        self.value_target = None
 
     def add_transition(self, reward: float, action: int, state: np.ndarray, search_policy: [float], search_value: float):
         self.rewards.append(reward)
@@ -18,12 +19,13 @@ class Episode:
         self.search_policies.append(search_policy)
         self.search_values.append(search_value)
 
-    # returns [(value, reward, action, search_policy, isDone)]
+    # returns [(value, reward, action, search_policy, isNotDone)]
     def make_targets(self, state_index: int, num_unroll_steps: int, discount: float, bootstrap_steps: int = 10) \
             -> [(float, float, int, [float], bool)]:
 
         # The value target is the discounted root value of the search tree N steps
         # into the future, plus the discounted sum of all rewards until then.
+        action_space_size = len(self.search_policies[0])
         targets = []
         for current_index in range(state_index, state_index + num_unroll_steps):
             bootstrap_index = current_index + bootstrap_steps
@@ -37,10 +39,35 @@ class Episode:
 
             if current_index < len(self.states):
                 targets.append((value, self.rewards[current_index], self.actions[current_index],
-                                self.search_policies[current_index], False))
+                                self.search_policies[current_index], True))
             else:
                 # States past the end of games are treated as absorbing states.
-                targets.append((0, 0, 0, [], True))
+                targets.append((0, 0, np.random.randint(action_space_size),
+                                [1.0/action_space_size for _ in range(action_space_size)], False))
+        return targets
+
+
+    def calc_targets(self, discount: float):
+        self.value_target = np.zeros_like(self.rewards, dtype=np.float)
+        R = 0
+        for i in reversed(range(len(self.rewards))):
+            R = self.rewards[i] + discount*R
+            self.value_target[i] = R
+        
+
+    # returns [(value, reward, action, search_policy, isNotDone)]
+    def make_targets_new(self, state_index: int, num_unroll_steps: int) \
+            -> [(float, float, int, [float], bool)]:
+        targets = []
+        action_space_size = len(self.search_policies[0])
+        for current_index in range(state_index, state_index + num_unroll_steps):
+            if current_index < len(self.states):
+                targets.append((self.value_target[current_index], self.rewards[current_index], self.actions[current_index],
+                                self.search_policies[current_index], True))
+            else:
+                targets.append((0, 0, np.random.randint(action_space_size),
+                                [1.0/action_space_size for _ in range(action_space_size)], False))
+
         return targets
 
     def gather_initial_state(self, state_index: int, num_initial_states: int) -> [np.ndarray]:
@@ -59,9 +86,10 @@ class Episode:
 
         state_index = np.random.randint(len(self.states))
         initial_states = self.gather_initial_state(state_index, num_initial_states)
-        targets = self.make_targets(state_index, num_unroll_steps, discount)
+        targets = self.make_targets_new(state_index, num_unroll_steps)
 
         return (initial_states, targets)
+
 
 '''
 
@@ -122,7 +150,7 @@ def test_make_target():
         print(t)
     assert len(targets) == 20
     assert targets[11][2] == 3
-    assert all([targets[i][4] for i in range(15, 20)])  # end states are donestates
+    assert all([not targets[i][4] for i in range(15, 20)])  # end states are donestates
     assert True
 
 
@@ -142,10 +170,51 @@ def test_sample():
     for i in range(100):
         e.add_transition(0, 2, np.array([i, i, i]), [0.1, 0.2, 0.3, 0.4], 0)
 
-    (initial, targets) = e.sample(num_initial_states, num_unroll_steps, .99) #targets[i] : (value, reward, action, search_policy, isDone)
+    e.calc_targets(.99)
+    # targets[i] : (value, reward, action, search_policy, isNotDone)
+    (initial, targets) = e.sample(num_initial_states, num_unroll_steps, .99)
 
     assert len(initial) == num_initial_states
     assert len(targets) == num_unroll_steps
-    assert targets[0][2] == 2 
+    assert targets[0][2] == 2
 
 
+'''
+
+    TEST make_targets_new()
+
+'''
+
+def test_make_targets_new():
+    e = Episode(3)
+
+    for i in range(100):
+        if i == 50:
+            e.add_transition(1, 2, np.array([i, i, i]), [i, 0.2, 0.3, 0.4], 0)
+        elif i == 55:
+            e.add_transition(0, 2, np.array([i, i, i]), [i, 0.2, 0.3, 0.4], 0.5)
+        elif i == 96:
+            e.add_transition(0, 3, np.array([i, i, i]), [i, 0.2, 0.3, 0.4], 3)
+        elif i == 98:
+            e.add_transition(0, 2, np.array([i, i, i]), [i, 0.2, 0.3, 0.4], 3)
+        elif i == 99:
+            e.add_transition(1, 2, np.array([i, i, i]), [i, 0.2, 0.3, 0.4], 1)
+        else:
+            e.add_transition(0, 2, np.array([i, i, i]), [i, 0.2, 0.3, 0.4], 0)
+
+    e.calc_targets(.99)
+
+    # tagets == [(value, reward, action, search_policy, isNotDone)]
+    targets = e.make_targets_new(85, 20)  # check out of bound
+    for t in targets:
+        print(t)
+    assert len(targets) == 20 #correct num transitions
+    assert targets[11][2] == 3 #correct action
+    assert all([not targets[i][4] for i in range(15, 20)])  # end states are donestates
+    assert targets[14][0] == 1 #correct value
+    assert targets[13][0] == 1*0.99 #correct value w discount
+    assert targets[12][0] == 1*0.99**2 #correct value w discount
+
+    assert targets[13][1] == 0 #correct rewards
+    assert targets[14][1] == 1 #correct rewards
+    assert all([np.array_equal(targets[i][3],[85 + i,0.2,0.3,0.4]) for i in range(15)])

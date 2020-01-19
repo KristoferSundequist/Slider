@@ -11,27 +11,17 @@ from MCTS import *
 from episode import *
 
 ncpus = cpu_count()
-#width = 1500
-#height = 1000
-#num_initial_states = 7
-#state_space_size = Game.state_space_size
-#inner_size = 30
-#action_space_size = Game.action_space_size
-#representation = Representation(num_initial_states, state_space_size, inner_size)
-#dynamics = Dynamics(inner_size, action_space_size)
-#prediction = Prediction(inner_size, action_space_size)
 
 
 def get_episode(
-    game_width: int,
-    game_height: int,
-    num_initial_states: int,
-    max_iters: int,
-    representation: Representation,
-    dynamics: Dynamics,
-    prediction: Prediction):
+        num_initial_states: int,
+        max_iters: int,
+        representation: Representation,
+        dynamics: Dynamics,
+        prediction: Prediction,
+        temperature: float,
+        game):
 
-    game = slider.Game(game_width, game_height)
     episode = Episode(game.state_space_size)
 
     initial_states = [np.zeros(game.state_space_size)
@@ -42,37 +32,35 @@ def get_episode(
 
         initial_states.pop(0)
         initial_states.append(state)
-        
+
         root = MCTS(initial_states, representation, dynamics, prediction, game.action_space_size, 50, .99)
 
-        action = sample_action(root)
-        reward,_ = game.step(action)
+        action = sample_action(root, temperature)
+        reward, _ = game.step(action)
 
-        episode.add_transition(reward, action, state, root.get_search_policy(), root.value())
-    
+        episode.add_transition(reward, action, state, root.get_search_policy(), root.search_value())
+
     return episode
 
+
 def get_episodes(
-    n_episodes: int,
-    game_width: int,
-    game_height: int,
-    num_initial_states: int,
-    max_iters: int,
-    representation: Representation,
-    dynamics: Dynamics,
-    prediction: Prediction):
+        n_episodes: int,
+        num_initial_states: int,
+        max_iters: int,
+        representation: Representation,
+        dynamics: Dynamics,
+        prediction: Prediction,
+        temperature: float,
+        gameFactory):
 
     torch.set_num_threads(1)
     pool = Pool(ncpus)
     torch.set_num_threads(ncpus)
-    
-    args = (game_width, game_height, num_initial_states, max_iters, representation, dynamics, prediction)
-    episodes = pool.starmap(get_episode, [args for _ in range(n_episodes)])
+
+    episodes = pool.starmap(get_episode,
+                            [(num_initial_states, max_iters, representation, dynamics, prediction, temperature, gameFactory()) for _ in range(n_episodes)])
 
     return episodes
-
-
-
 
 
 '''
@@ -81,19 +69,23 @@ TEST get_episode()
 
 '''
 
+
 def test_get_episode():
+    game = slider.GameSimple(1000, 1000)
+
     num_initial_states = 7
-    state_space_size = slider.Game.state_space_size
+    state_space_size = game.state_space_size
     inner_size = 30
-    action_space_size = slider.Game.action_space_size
+    action_space_size = game.action_space_size
     representation = Representation(num_initial_states, state_space_size, inner_size)
     dynamics = Dynamics(inner_size, action_space_size)
     prediction = Prediction(inner_size, action_space_size)
 
     num_iterations = 30
-    e = get_episode(1000, 1000, num_initial_states, num_iterations, representation, dynamics, prediction)
+    e = get_episode(num_initial_states, num_iterations, representation, dynamics, prediction, 1, game)
 
     assert len(e.states) == num_iterations
+
 
 '''
 
@@ -101,18 +93,24 @@ TEST get_episodes()
 
 '''
 
+
 def test_get_episodeS():
+    def gameFactory(): return slider.GameSimple(1000, 1000)
+    game = gameFactory()
     num_initial_states = 7
-    state_space_size = slider.Game.state_space_size
+    state_space_size = game.state_space_size
     inner_size = 30
-    action_space_size = slider.Game.action_space_size
+    action_space_size = game.action_space_size
     representation = Representation(num_initial_states, state_space_size, inner_size)
     dynamics = Dynamics(inner_size, action_space_size)
     prediction = Prediction(inner_size, action_space_size)
 
-    num_iterations = 3000
+    num_iterations = 30
     num_episodes = 10
-    episodes = get_episodes(10, 1000, 1000, num_initial_states, num_iterations, representation, dynamics, prediction)
+    episodes = get_episodes(10, num_initial_states, num_iterations, representation,
+                            dynamics, prediction, 1, gameFactory)
 
     assert len(episodes) == num_episodes
     assert len(episodes[0].states) == num_iterations
+
+    assert not np.array_equal(episodes[0].states[0], episodes[1].states[0])  # make sure not same data in diff episodes

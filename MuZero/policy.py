@@ -2,6 +2,18 @@ import torch
 from torch import autograd, nn, optim
 import torch.nn.functional as F
 import numpy as np
+from util import *
+
+'''
+
+Policy util
+
+'''
+
+# h(x) from paper: Appendix F Network Architecture
+def transform(x: float, epsilon: float = 1e-3) -> float:
+    return np.sign(x)*(np.sqrt(np.abs(x)+1)-1+epsilon*x)
+
 
 '''
 
@@ -18,15 +30,19 @@ class Representation(nn.Module):
         self.num_states = num_states
         self.state_space_size = state_space_size
 
-        self.w1 = nn.Linear(num_states * state_space_size, 200)
-        self.w2 = nn.Linear(200, inner_size)
+        self.w1 = nn.Linear(num_states * state_space_size, 256)
+        self.w2 = nn.Linear(256, 256)
+        self.w3 = nn.Linear(256, 256)
+        self.w4 = nn.Linear(256, inner_size)
 
     def prepare_states(self, initial_states):
         return torch.Tensor(np.reshape(np.array(initial_states), [-1, self.num_states*self.state_space_size]))
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         x = F.relu(self.w1(input))
-        out = self.w2(x)
+        x = F.relu(self.w2(x))
+        x = F.relu(self.w3(x))
+        out = torch.tanh(self.w4(x))
         return out
 
 
@@ -95,17 +111,28 @@ class Dynamics(nn.Module):
         self.inner_size = inner_size
         self.action_space_size = action_space_size
 
-        self.w1 = nn.Linear(inner_size + action_space_size, 200)
+        self.r1 = nn.Linear(inner_size + action_space_size, 256)
+        self.r2 = nn.Linear(256, 256)
+        #self.reward_out = nn.Linear(256, 41)
+        self.reward_out = nn.Linear(256, 1)
 
-        self.reward_out = nn.Linear(200, 1)
-        self.state_out = nn.Linear(200, inner_size)
+        self.s1 = nn.Linear(inner_size + action_space_size, 256)
+        self.s2 = nn.Linear(256, 256)
+        self.state_out = nn.Linear(256, inner_size)
 
     def forward(self, state: torch.Tensor,
                 action: torch.Tensor) -> (torch.Tensor, torch.Tensor):
         joint = torch.cat((state, action), 1)
-        x = F.relu(self.w1(joint))
-        reward = self.reward_out(x)
-        next_state = self.state_out(x)
+        
+        reward = F.relu(self.r1(joint))
+        reward = F.relu(self.r2(reward))
+        #reward = F.softmax(self.reward_out(reward), dim=1)
+        reward = self.reward_out(reward)
+
+        next_state = F.relu(self.s1(joint))
+        next_state = F.relu(self.s2(next_state))
+        next_state = torch.tanh(self.state_out(next_state))
+        
         return reward, next_state
 
 
@@ -138,16 +165,28 @@ class Prediction(nn.Module):
         self.inner_size = inner_size
         self.action_space_size = action_space_size
 
-        self.w1 = nn.Linear(inner_size, 80)
-        self.w2 = nn.Linear(80, 80)
+        
+        self.p1 = nn.Linear(inner_size, 256)
+        self.p2 = nn.Linear(256, 256)
+        self.policy_out = nn.Linear(256, action_space_size)
 
-        self.policy_out = nn.Linear(80, action_space_size)
-        self.value_out = nn.Linear(80, 1)
+        self.v1 = nn.Linear(inner_size, 256)
+        self.v2 = nn.Linear(256, 256)
+        #self.value_out = nn.Linear(256, 41)
+        self.value_out = nn.Linear(256, 1)
 
     def forward(self, state: torch.Tensor) -> (torch.Tensor, torch.Tensor):
-        x = F.relu(self.w1(state))
-        policy = F.softmax(self.policy_out(x), dim=1)
-        value = self.value_out(x)
+
+
+        policy = F.relu(self.p1(state))
+        policy = F.relu(self.p2(policy))
+        policy = F.softmax(self.policy_out(policy), dim=1)
+
+        value = F.relu(self.v1(state))
+        value = F.relu(self.v2(value))
+        #value = F.softmax(self.value_out(value), dim=1)
+        value = self.value_out(value)
+
         return policy, value
 
 

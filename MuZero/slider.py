@@ -66,6 +66,24 @@ class Slider:
         self.y += self.dy
         self.dx*=0.99
         self.dy*=0.99
+    
+    #   1
+    # 0   2
+    #   3
+    def move(self, direction):
+        speed = 8
+        if direction == 0:
+            self.x -= speed
+        elif direction == 1:
+            self.y -= speed
+        elif direction == 2:
+            self.x += speed
+        else:
+            self.y += speed
+        
+        self.dx = 0
+        self.dy = 0
+        self.update()
         
                     
     def render(self,win):
@@ -145,7 +163,7 @@ class Game:
     def __init__(self, width, height):
         self.s = Slider(width, height)
         self.t = Target(50, width, height)
-        self.enemy = Enemy(30,1,width, height)
+        self.enemy = Enemy(30,3,width, height)
         self.width = width
         self.height = height
 
@@ -177,7 +195,7 @@ class Game:
 
         reward = 0
         if self.intersect(self.s, self.t):
-            reward += .2
+            reward += 1
             self.t.reset()
 
         if self.intersect(self.s,self.enemy):
@@ -253,7 +271,7 @@ class Game2:
 ##########################################
 
 class GameSimple:
-    state_space_size = 6
+    state_space_size = 4
     action_space_size = 4
     
     def __init__(self, width, height):
@@ -269,8 +287,6 @@ class GameSimple:
         return np.array([
             self.s.x/self.width,
             self.s.y/self.height,
-            self.s.dx/10,
-            self.s.dy/10,
             self.t.x/self.width,
             self.t.y/self.height,
         ])
@@ -280,12 +296,57 @@ class GameSimple:
         self.s.render(win)
 
     def step(self, action):
-        self.s.push(action)
-        self.s.update()
+        self.s.move(action)
 
         reward = 0
         if self.intersect(self.s, self.t):
             reward += 1
+            self.t.reset()
+
+        return reward, self.get_state()
+
+
+
+##########################################
+## GAME 4 - BE NEAR ################################
+##########################################
+
+class GameBeNear:
+    state_space_size = 4
+    action_space_size = 4
+    
+    def __init__(self, width, height):
+        self.s = Slider(width, height)
+        self.t = Target(50, width, height)
+        self.width = width
+        self.height = height
+
+
+    def distance(self, slider, target):
+        return np.sqrt(np.power(slider.x - target.x, 2) + np.power(slider.y - target.y, 2))
+
+    def intersect(self, slider, target):
+        return slider.radius + target.radius > distance(slider, target)
+
+    def get_state(self):
+        return np.array([
+            self.s.x/self.width,
+            self.s.y/self.height,
+            self.t.x/self.width,
+            self.t.y/self.height,
+        ])
+
+    def render(self, win):
+        self.t.render(win)
+        self.s.render(win)
+
+    def step(self, action):
+        self.s.move(action)
+
+        max_reward = 2
+        distance = self.distance(self.s, self.t)
+        reward = max_reward if distance == 0 else np.clip(10/distance, -max_reward, max_reward)
+        if(np.random.randint(3000) == 0):
             self.t.reset()
 
         return reward, self.get_state()

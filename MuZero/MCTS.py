@@ -9,7 +9,8 @@ def forward_simulation(
     root: Node,
     dynamics: Dynamics,
     prediction: Prediction,
-    action_space_size: int
+    action_space_size: int,
+    normalizer: Normalizer
 ):
 
     path = []
@@ -19,29 +20,38 @@ def forward_simulation(
 
     while True:
         path.append(current_node)
-        action = current_node.get_action()
+        action = current_node.get_action(normalizer)
         actions.append(action)
         child_node = current_node.edges[action]
         if child_node == None:
-            reward, new_state = dynamics.forward(
-                current_node.inner_state, onehot(action_space_size, action).unsqueeze(0))
-            policy, value = prediction.forward(new_state)
-            new_node = Node(new_state, action_space_size, policy.numpy().squeeze())
-            current_node.expand(action, reward.item(), new_node)
-            # path.append(new_node)
-            return (path, actions, value.item())
+            with torch.no_grad():
+                reward, new_state = dynamics.forward(
+                    current_node.inner_state, onehot(action_space_size, action).unsqueeze(0))
+                policy, value = prediction.forward(new_state)
+                new_node = Node(new_state, action_space_size, policy.numpy().squeeze())
+                #current_node.expand(action, expected_value(reward).item(), new_node)
+                current_node.expand(action, reward.item(), new_node)
+                # path.append(new_node)
+                #return (path, actions, expected_value(value).item())
+                return (path, actions, value.item())
         else:
             current_node = child_node
 
 
-def backwards(path: [Node], actions: [int], value: float, discount: float):
+def backwards(path: [Node], actions: [int], value: float, discount: float, normalizer: Normalizer):
     rev_path = reversed(path)
     rev_actions = reversed(actions)
 
     for (node, action) in zip(rev_path, rev_actions):
         node.update(value, action)
+        normalizer.update(node.mean_values[action])
         value = node.rewards[action] + discount * value
 
+
+def get_noise(policy: np.ndarray, alpha: float = 0.25, frac:float = 0.25) -> np.ndarray:
+    actions = list(range(len(policy)))
+    noise = np.random.dirichlet([alpha] * len(actions))
+    return np.array([policy[a] * (1 - frac) + n * frac for (a, n) in zip(actions, noise)])
 
 def MCTS(
         initial_states: [np.ndarray],
@@ -53,16 +63,21 @@ def MCTS(
         discount: float
     ):
 
+    normalizer = Normalizer(0, 10)
+
     with torch.no_grad():
         inner = representation.forward(representation.prepare_states(initial_states))
-        policy, value = prediction.forward(inner)
-        root = Node(inner, action_space_size, policy.numpy().squeeze())
+        policy, _ = prediction.forward(inner)
+
+        root = Node(inner, action_space_size, get_noise(policy.numpy().squeeze(), 0.25, 0.25))
+        #root.mean_values = [1.7,0,0,0]
+        #root.visit_counts = [1,0,0,0]
         #root = Node(inner, action_space_size, np.array([0.1,0.1,0.1,0.7]))
 
         for i in range(num_simulations):
             (path, actions, value) = forward_simulation(root, dynamics,
-                                                        prediction, action_space_size)
-            backwards(path, actions, value, discount)
+                                                        prediction, action_space_size, normalizer)
+            backwards(path, actions, value, discount, normalizer)
 
         return root
 
@@ -83,15 +98,19 @@ def print_tree(node: Node, depth=0, max_depth = 10000):
         return
 
     prefix = "-" * depth
-    print("--------------------------------NODE-----------------------------------")
-    print(prefix, "value:", node.value())
-    print(prefix, "search_policy", node.get_search_policy())
+    visit_counts = sum(node.visit_counts)
+    print(prefix, "value:", node.search_value() if visit_counts > 0 else None )
+    print(prefix, "search_policy", node.get_search_policy() if visit_counts > 0 else None)
     print(prefix, "prior_policy:", node.policy)
+    print(prefix, "visit_counts:", node.visit_counts)
+    print(prefix, "mean_values:", node.mean_values)
+    print(prefix, "rewards:", node.rewards)
     print("-------------------------------CHILDREN---------------------------------")
     for a in range(node.action_space_size):
         if node.edges[a] is None:
             print(prefix, a, None)
         else:
+            print("--------------------------------NODE-----------------------------------")
             print(prefix, a, "visit count", node.visit_counts[a], "mean_value", node.mean_values[a], "reward", node.rewards[a])
             print_tree(node.edges[a], depth+1, max_depth)
 
@@ -134,7 +153,7 @@ def test_sample_action():
 
     action_count = [0,0,0,0]
     for _ in range(10000):
-        action_count[sample_action(root)] += 1
+        action_count[sample_action(root, 1)] += 1
     
     action_count_rounded_to_nearest_thousand = list(map(lambda v: round(v, -3), action_count))
     
@@ -192,3 +211,12 @@ def test_print_tree_MCTS():
     root = MCTS(raw_states, r, d, p, action_space_size, 301, 0.99)
     print_tree(root, 0, 0)
     assert True
+
+'''
+    TEST get_noise()
+'''
+
+def test_get_noise():
+    p = np.array([0.25,0.25,0.25,0.25])
+    new_p = get_noise(p)
+    assert new_p.shape == p.shape

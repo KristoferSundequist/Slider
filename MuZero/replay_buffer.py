@@ -13,9 +13,10 @@ class Replay_buffer:
         batch = [self.replay_buffer[i].sample(num_initial_states, num_unroll_steps, discount) for i in inds]
         return batch
 
-    def add_episode(self, e: Episode):
+    def add_episode(self, e: Episode, discount):
         if len(self.replay_buffer) >= self.buffer_size:
             self.replay_buffer.pop(0)
+        e.calc_targets(discount)
         self.replay_buffer.append(e)
 
 
@@ -30,15 +31,15 @@ def test_add_episode():
     buffer_size = 3
     replay_buffer = Replay_buffer(buffer_size)
     assert len(replay_buffer.replay_buffer) == 0
-    replay_buffer.add_episode(Episode(10))
+    replay_buffer.add_episode(Episode(10), .99)
     assert len(replay_buffer.replay_buffer) == 1
-    replay_buffer.add_episode(Episode(10))
+    replay_buffer.add_episode(Episode(10), .99)
     assert len(replay_buffer.replay_buffer) == 2
-    replay_buffer.add_episode(Episode(10))
+    replay_buffer.add_episode(Episode(10), .99)
     assert len(replay_buffer.replay_buffer) == buffer_size
-    replay_buffer.add_episode(Episode(10))
+    replay_buffer.add_episode(Episode(10), .99)
     assert len(replay_buffer.replay_buffer) == buffer_size
-    replay_buffer.add_episode(Episode(10))
+    replay_buffer.add_episode(Episode(10), .99)
     assert len(replay_buffer.replay_buffer) == buffer_size
 
 
@@ -54,7 +55,7 @@ def test_sample_batch():
         e = Episode(3)
         for i in range(100):
             e.add_transition(0, i, np.array([i, i, i]), [0.1, 0.2, 0.3, 0.4], 0)
-        rb.add_episode(e)
+        rb.add_episode(e, .99)
     
     batch = rb.sample_batch(32, 7, 5, .99)
     assert len(batch) == 32

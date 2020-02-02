@@ -16,7 +16,7 @@ class Replay_buffer:
     def add_episode(self, e: Episode, discount):
         if len(self.replay_buffer) >= self.buffer_size:
             self.replay_buffer.pop(0)
-        e.calc_targets(discount)
+        e.calc_targets_gae(discount)
         self.replay_buffer.append(e)
 
 

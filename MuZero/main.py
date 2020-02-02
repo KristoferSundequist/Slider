@@ -24,7 +24,7 @@ game_width = 800
 game_height = 700
 
 
-def gameFactory(): return slider.GameBeNear(game_width, game_height)
+def gameFactory(): return slider.Game(game_width, game_height)
 
 
 logger = Logger()
@@ -36,13 +36,13 @@ inner_size = 128
 action_space_size = game.action_space_size
 
 representation = Representation(num_initial_states, state_space_size, inner_size)
-representation_optimizer = torch.optim.SGD(representation.parameters(), lr=0.05, momentum=0.9, weight_decay=1e-4)
+representation_optimizer = torch.optim.Adam(representation.parameters(), lr=3e-4)
 
 dynamics = Dynamics(inner_size, action_space_size)
-dynamics_optimizer = torch.optim.SGD(dynamics.parameters(), lr=0.01, momentum=0.9, weight_decay=1e-4)
+dynamics_optimizer = torch.optim.Adam(dynamics.parameters(), lr=3e-4)
 
 prediction = Prediction(inner_size, action_space_size)
-prediction_optimizer = torch.optim.SGD(prediction.parameters(), lr=0.01, momentum=0.9, weight_decay=1e-4)
+prediction_optimizer = torch.optim.Adam(prediction.parameters(), lr=3e-4)
 
 replay_buffer = Replay_buffer(100)
 

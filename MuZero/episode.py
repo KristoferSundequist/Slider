@@ -46,6 +46,20 @@ class Episode:
                                 [1.0/action_space_size for _ in range(action_space_size)], False))
         return targets
 
+    def calc_targets_gae(self, discount: float, lambd: float = 0.95):
+        values = self.search_values.copy()
+        values.append(0)
+
+        targets = np.zeros_like(self.rewards, dtype=np.float)
+
+        gae = 0
+        for i in reversed(range(len(self.rewards))):
+            delta = self.rewards[i] + discount*values[i+1] - values[i]
+            gae = delta + discount*lambd*gae
+            targets[i] = values[i] + gae
+
+        
+        self.value_target = targets
 
     def calc_targets(self, discount: float):
         self.value_target = np.zeros_like(self.rewards, dtype=np.float)
@@ -170,7 +184,7 @@ def test_sample():
     for i in range(100):
         e.add_transition(0, 2, np.array([i, i, i]), [0.1, 0.2, 0.3, 0.4], 0)
 
-    e.calc_targets(.99)
+    e.calc_targets_gae(.99)
     # targets[i] : (value, reward, action, search_policy, isNotDone)
     (initial, targets) = e.sample(num_initial_states, num_unroll_steps, .99)
 
@@ -214,6 +228,47 @@ def test_make_targets_new():
     assert targets[14][0] == 1 #correct value
     assert targets[13][0] == 1*0.99 #correct value w discount
     assert targets[12][0] == 1*0.99**2 #correct value w discount
+
+    assert targets[13][1] == 0 #correct rewards
+    assert targets[14][1] == 1 #correct rewards
+    assert all([np.array_equal(targets[i][3],[85 + i,0.2,0.3,0.4]) for i in range(15)])
+
+def test_make_targets_gae():
+    e = Episode(3)
+
+    for i in range(100):
+        if i == 50:
+            e.add_transition(1, 2, np.array([i, i, i]), [i, 0.2, 0.3, 0.4], 0)
+        elif i == 55:
+            e.add_transition(0, 2, np.array([i, i, i]), [i, 0.2, 0.3, 0.4], 0.5)
+        elif i == 96:
+            e.add_transition(0, 3, np.array([i, i, i]), [i, 0.2, 0.3, 0.4], 1)
+        elif i == 97:
+            e.add_transition(0, 2, np.array([i, i, i]), [i, 0.2, 0.3, 0.4], 1)
+        elif i == 98:
+            e.add_transition(0, 2, np.array([i, i, i]), [i, 0.2, 0.3, 0.4], 0.5)
+        elif i == 99:
+            e.add_transition(1, 2, np.array([i, i, i]), [i, 0.2, 0.3, 0.4], 1)
+        else:
+            e.add_transition(0, 2, np.array([i, i, i]), [i, 0.2, 0.3, 0.4], 0)
+
+    discount = .99
+    lambd = .95
+    e.calc_targets_gae(discount, lambd)
+
+    # tagets == [(value, reward, action, search_policy, isNotDone)]
+    targets = e.make_targets_new(85, 20)  # check out of bound
+    for t in targets:
+        print(t)
+    assert len(targets) == 20 #correct num transitions
+    assert targets[11][2] == 3 #correct action
+    assert all([not targets[i][4] for i in range(15, 20)])  # end states are donestates
+    gae99 = (1 + discount*0 - 1)
+    assert targets[14][0] == 1 + gae99
+    gae98 = (0 + discount*1 - 0.5) + discount*lambd*gae99
+    assert targets[13][0] == 0.5 + gae98
+    gae97 = (0 + discount*0.5 - 1) + discount*lambd*gae98
+    assert targets[12][0] == 1 + gae97
 
     assert targets[13][1] == 0 #correct rewards
     assert targets[14][1] == 1 #correct rewards

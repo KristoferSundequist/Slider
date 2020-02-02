@@ -135,6 +135,11 @@ def train_on_batch(
 
     loss.backward()
 
+    max_grad_norm = 0.5
+    torch.nn.utils.clip_grad_norm_(representation.parameters(), max_grad_norm)
+    torch.nn.utils.clip_grad_norm_(dynamics.parameters(), max_grad_norm)
+    torch.nn.utils.clip_grad_norm_(prediction.parameters(), max_grad_norm)
+
     representation_optimizer.step()
     dynamics_optimizer.step()
     prediction_optimizer.step()

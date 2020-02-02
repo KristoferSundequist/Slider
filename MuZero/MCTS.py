@@ -63,13 +63,13 @@ def MCTS(
         discount: float
     ):
 
-    normalizer = Normalizer(0, 10)
+    normalizer = Normalizer(-2, 2)
 
     with torch.no_grad():
         inner = representation.forward(representation.prepare_states(initial_states))
         policy, _ = prediction.forward(inner)
 
-        root = Node(inner, action_space_size, get_noise(policy.numpy().squeeze(), 0.25, 0.25))
+        root = Node(inner, action_space_size, get_noise(policy.numpy().squeeze(), 0.25, 0))
         #root.mean_values = [1.7,0,0,0]
         #root.visit_counts = [1,0,0,0]
         #root = Node(inner, action_space_size, np.array([0.1,0.1,0.1,0.7]))

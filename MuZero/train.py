@@ -79,7 +79,7 @@ def train_on_batch(
     action_space_size: int,
     logger: Logger
 ):
-    scalar_loss = nn.SmoothL1Loss()
+    scalar_loss = nn.L1Loss()
     policy_loss_scale = 1
 
     targets = [e[1] for e in batch]

@@ -1,18 +1,19 @@
 import numpy as np
 from graphics import *
 
-##########
-## GAME ##
-##########
+##############
+### SHARED ###
+##############
 
 class Slider:
     
     def __init__(self,width, height):
+        self.max_speed = 10
         self.x = np.random.randint(50,width-50)
         self.y = np.random.randint(50,height-50)
         self.radius = 30
-        self.dx = np.random.randint(-10,10)
-        self.dy = np.random.randint(-10,10)
+        self.dx = np.random.randint(-self.max_speed,self.max_speed)
+        self.dy = np.random.randint(-self.max_speed,self.max_speed)
         self.dd = 0.5
         self.width = width
         self.height = height
@@ -22,27 +23,28 @@ class Slider:
         self.x = np.random.randint(50,self.width-50)
         self.y = np.random.randint(50,self.height-50)
         self.radius = 30
-        self.dx = np.random.randint(-10,10)
-        self.dy = np.random.randint(-10,10)
+        self.dx = np.random.randint(-self.max_speed,self.max_speed)
+        self.dy = np.random.randint(-self.max_speed,self.max_speed)
         self.dd = 0.5
     
+    # 0 : nothing
     #   1
-    # 0   2
+    # 4   2
     #   3
     def push(self,direction):
-        if direction == 0:
-            self.dx -= self.dd
-        elif direction == 1:
+        if direction == 1:
             self.dy -= self.dd
         elif direction == 2:
             self.dx += self.dd
         elif direction == 3:
             self.dy += self.dd
+        elif direction == 4:
+            self.dx -= self.dd
         
-        if self.dx > 10: self.dx = 10
-        if self.dx < -10: self.dx = -10
-        if self.dy > 10: self.dy = 10
-        if self.dy < -10: self.dy = -10
+        if self.dx > self.max_speed: self.dx = self.max_speed
+        if self.dx < -self.max_speed: self.dx = -self.max_speed
+        if self.dy > self.max_speed: self.dy = self.max_speed
+        if self.dy < -self.max_speed: self.dy = -self.max_speed
             
     def update(self):
 
@@ -66,20 +68,21 @@ class Slider:
         self.y += self.dy
         self.dx*=0.99
         self.dy*=0.99
-    
+
+    # 0 : nothing
     #   1
-    # 0   2
+    # 4   2
     #   3
     def move(self, direction):
         speed = 8
-        if direction == 0:
-            self.x -= speed
-        elif direction == 1:
+        if direction == 1:
             self.y -= speed
         elif direction == 2:
             self.x += speed
-        else:
+        elif direction == 3:
             self.y += speed
+        elif direction == 4:
+            self.x -= speed
         
         self.dx = 0
         self.dy = 0
@@ -158,7 +161,7 @@ class Enemy:
 class Game:
     # state_space_size = 6
     state_space_size = 8
-    action_space_size = 4
+    action_space_size = 5
     
     def __init__(self, width, height):
         self.s = Slider(width, height)
@@ -205,13 +208,13 @@ class Game:
         return reward, self.get_state()
 
 ##########################################
-## GAME 2 ################################
+## GAME TWO ENEMIES ################################
 ##########################################
 
-class Game2:
+class GameTwoEnemies:
     # state_space_size = 6
     state_space_size = 10
-    action_space_size = 4
+    action_space_size = 5
     
     def __init__(self, width, height):
         self.s = Slider(width, height)
@@ -272,7 +275,7 @@ class Game2:
 
 class GameSimple:
     state_space_size = 4
-    action_space_size = 4
+    action_space_size = 5
     
     def __init__(self, width, height):
         self.s = Slider(width, height)
@@ -313,7 +316,7 @@ class GameSimple:
 
 class GameBeNear:
     state_space_size = 4
-    action_space_size = 4
+    action_space_size = 5
     
     def __init__(self, width, height):
         self.s = Slider(width, height)

@@ -25,7 +25,7 @@ def test_onehot_not_equal():
 '''
 
 def normalize_minmax_tensor(v):
-    return (v-v.min())/(v.max() - v.min())
+    return (v-v.min()).true_divide((v.max() - v.min()))
 
 def test_normalize_tensor():
     t = torch.tensor([[-20,0, 3, 5]])

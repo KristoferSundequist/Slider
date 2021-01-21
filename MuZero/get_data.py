@@ -20,7 +20,8 @@ def get_episode(
         dynamics: Dynamics,
         prediction: Prediction,
         temperature: float,
-        game):
+        game,
+        discount: float):
 
     episode = Episode(game.state_space_size)
 
@@ -40,6 +41,7 @@ def get_episode(
 
         episode.add_transition(reward, action, state, root.get_search_policy(), root.search_value())
 
+    episode.calc_targets_gae(discount)
     return episode
 
 
@@ -51,15 +53,17 @@ def get_episodes(
         dynamics: Dynamics,
         prediction: Prediction,
         temperature: float,
-        gameFactory):
+        gameFactory,
+        discount):
 
     torch.set_num_threads(1)
     pool = Pool(ncpus)
-    torch.set_num_threads(ncpus)
 
     episodes = pool.starmap(get_episode,
-                            [(num_initial_states, max_iters, representation, dynamics, prediction, temperature, gameFactory()) for _ in range(n_episodes)])
+                            [(num_initial_states, max_iters, representation, dynamics, prediction, temperature, gameFactory(), discount) for _ in range(n_episodes)])
 
+    torch.set_num_threads(ncpus)
+    
     return episodes
 
 
@@ -82,7 +86,7 @@ def test_get_episode():
     prediction = Prediction(inner_size, action_space_size)
 
     num_iterations = 30
-    e = get_episode(num_initial_states, num_iterations, representation, dynamics, prediction, 1, game)
+    e = get_episode(num_initial_states, num_iterations, representation, dynamics, prediction, 1, game, 0.99)
 
     assert len(e.states) == num_iterations
 
@@ -108,7 +112,7 @@ def test_get_episodeS():
     num_iterations = 30
     num_episodes = 10
     episodes = get_episodes(10, num_initial_states, num_iterations, representation,
-                            dynamics, prediction, 1, gameFactory)
+                            dynamics, prediction, 1, gameFactory, 0.99)
 
     assert len(episodes) == num_episodes
     assert len(episodes[0].states) == num_iterations

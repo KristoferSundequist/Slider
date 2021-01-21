@@ -10,7 +10,7 @@ class Episode:
         self.search_policies = []
         self.search_values = []
         self.state_space_size = state_space_size
-        self.value_target = None
+        self.value_targets = None
 
     def add_transition(self, reward: float, action: int, state: np.ndarray, search_policy: [float], search_value: float):
         self.rewards.append(reward)
@@ -59,14 +59,14 @@ class Episode:
             targets[i] = values[i] + gae
 
         
-        self.value_target = targets
+        self.value_targets = targets
 
     def calc_targets(self, discount: float):
-        self.value_target = np.zeros_like(self.rewards, dtype=np.float)
+        self.value_targets = np.zeros_like(self.rewards, dtype=np.float)
         R = 0
         for i in reversed(range(len(self.rewards))):
             R = self.rewards[i] + discount*R
-            self.value_target[i] = R
+            self.value_targets[i] = R
         
 
     # returns [(value, reward, action, search_policy, isNotDone)]
@@ -76,7 +76,7 @@ class Episode:
         action_space_size = len(self.search_policies[0])
         for current_index in range(state_index, state_index + num_unroll_steps):
             if current_index < len(self.states):
-                targets.append((self.value_target[current_index], self.rewards[current_index], self.actions[current_index],
+                targets.append((self.value_targets[current_index], self.rewards[current_index], self.actions[current_index],
                                 self.search_policies[current_index], True))
             else:
                 targets.append((0, 0, np.random.randint(action_space_size),
@@ -95,7 +95,7 @@ class Episode:
 
         return initial_states
 
-    def sample(self, num_initial_states: int, num_unroll_steps: int, discount: float) \
+    def sample(self, num_initial_states: int, num_unroll_steps: int) \
             -> ([np.ndarray], [(float, float, int, [float], bool)]):
 
         state_index = np.random.randint(len(self.states))
@@ -186,7 +186,7 @@ def test_sample():
 
     e.calc_targets_gae(.99)
     # targets[i] : (value, reward, action, search_policy, isNotDone)
-    (initial, targets) = e.sample(num_initial_states, num_unroll_steps, .99)
+    (initial, targets) = e.sample(num_initial_states, num_unroll_steps)
 
     assert len(initial) == num_initial_states
     assert len(targets) == num_unroll_steps

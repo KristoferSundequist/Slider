@@ -7,7 +7,8 @@ from multiprocessing import Pool, cpu_count
 from torch.utils.data.sampler import BatchSampler, SubsetRandomSampler
 import yappi
 
-import slider_jumper
+#import slider_jumper
+import slider
 import graphics
 
 from policy import *
@@ -25,7 +26,7 @@ game_width = 800
 game_height = 700
 
 
-def gameFactory(): return slider_jumper.Game(game_width, game_height)
+def gameFactory(): return slider.Game(game_width, game_height)
 
 
 
@@ -46,7 +47,8 @@ dynamics_optimizer = torch.optim.Adam(dynamics.parameters(), lr=3e-4)
 prediction = Prediction(inner_size, action_space_size)
 prediction_optimizer = torch.optim.Adam(prediction.parameters(), lr=3e-4)
 
-replay_buffer = Replay_buffer(100)
+#replay_buffer = Replay_buffer(100)
+replay_buffer = load_from_file('trajectories/buffer7')
 
 def save_params(name):
     state = {
@@ -81,11 +83,11 @@ def get_data(n_episodes: int, max_episode_length: int, temperature: float, disco
 
 
 def train(batch_size: int = 1024, num_unroll_steps: int = 5):
-
     batch = replay_buffer.sample_batch(batch_size, num_initial_states, num_unroll_steps)
 
     train_on_batch(batch, representation, dynamics, prediction, representation_optimizer,
                    dynamics_optimizer, prediction_optimizer, game.action_space_size, logger)
+
 
 #main(10, 6, 2000, 1000, 1024, 0.1)
 def main(n_iters: int, n_episodes: int, max_episode_length: int, n_batches: int = 1000, batch_size: int = 1024, temperature=1, profile=False):
@@ -179,7 +181,8 @@ def human_play(iterations: int, record: bool = False):
         graphics.Text(graphics.Point(300, 300), reward).draw(win)
         graphics.Text(graphics.Point(100, 100), "KEY:" + key).draw(win)
         
-        action_one_hot = [1.0 if i == action else 0.0 for i in range(game.action_space_size)]
+
+        action_one_hot = [0.8 if i == action else (0.2/(game.action_space_size-1)) for i in range(game.action_space_size)]
         
         episode.add_transition(reward, action, state, action_one_hot, 0.0)
         time.sleep(0.02)
@@ -188,7 +191,6 @@ def human_play(iterations: int, record: bool = False):
       episode.calc_targets(0.99)
       replay_buffer.add_episode(episode)
     win.close()
-
 
 '''
 

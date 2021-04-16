@@ -84,8 +84,7 @@ def train_on_batch(
 
     targets = [e[1] for e in batch]
     num_unroll_steps = len(targets[0])
-    one_hot_actions, search_policies, value_targets, observed_rewards, isNotDone = prepare_targets(
-        targets, action_space_size)
+    one_hot_actions, search_policies, value_targets, observed_rewards, isNotDone = prepare_targets(targets, action_space_size)
 
     initial_states = [e[0] for e in batch]
     inner_states = representation.forward(representation.prepare_states(initial_states))

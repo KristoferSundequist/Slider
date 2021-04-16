@@ -1,5 +1,20 @@
 import torch
 import numpy as np
+import pickle
+
+'''
+    PICKLE
+'''
+def save_to_file(thing, file_name):
+    out_file = open(file_name, 'wb')
+    pickle.dump(thing, out_file)
+    out_file.close()
+    
+def load_from_file(file_name):
+    in_file = open(file_name, 'rb')
+    thing = pickle.load(in_file)
+    in_file.close()
+    return thing
 
 '''
 

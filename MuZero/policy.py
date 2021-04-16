@@ -172,7 +172,6 @@ class Prediction(nn.Module):
 
         self.v1 = nn.Linear(inner_size, 256)
         self.v2 = nn.Linear(256, 256)
-        #self.value_out = nn.Linear(256, 41)
         self.value_out = nn.Linear(256, 1)
 
     def forward(self, state: torch.Tensor) -> (torch.Tensor, torch.Tensor):

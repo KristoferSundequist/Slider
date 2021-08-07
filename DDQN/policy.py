@@ -1,11 +1,7 @@
 import torch
-from torch import autograd, nn, optim
-from torch.autograd import Variable
+from torch import nn, optim
 import torch.nn.functional as F
 import numpy as np
-from torch.utils.data.sampler import BatchSampler, SubsetRandomSampler
-from collections import namedtuple
-import random
 import copy
     
 
@@ -14,11 +10,12 @@ class policy(nn.Module):
         super(policy, self).__init__()
         self.n_inputs = 8
         self.n_outputs = 4
+        self.hidden_size = 256
         
-        self.fc1 = nn.Linear(self.n_inputs,300)
-        self.fc2 = nn.Linear(300,300)
-        self.fc3 = nn.Linear(300,300)
-        self.action_out = nn.Linear(300,self.n_outputs)
+        self.fc1 = nn.Linear(self.n_inputs, self.hidden_size)
+        self.fc2 = nn.Linear(self.hidden_size, self.hidden_size)
+        self.fc3 = nn.Linear(self.hidden_size, self.hidden_size)
+        self.action_out = nn.Linear(self.hidden_size, self.n_outputs)
         
         #self.value_features = nn.Linear(200,100)
         #self.value = nn.Linear(100,1)
@@ -46,26 +43,23 @@ class policy(nn.Module):
             variance = np.sqrt(2.0/(fan_in + fan_out))
             m.weight.data.normal_(0.0, variance)
 
-    def weighted_loss(self, inputs, target, weight):
-        batch_loss = 0.5*(torch.abs(inputs - target)<1).float()*(inputs - target)**2 + (torch.abs(inputs - target)>=1).float()*(torch.abs(inputs - target) - 0.5)
-        weighted_batch_loss = weight * batch_loss
-        return weighted_batch_loss.mean()
-    
     def forward(self, x):
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         x = F.relu(self.fc3(x))
-        return self.action_out(x)
+        qvals = self.action_out(x)
+        return qvals
 
         #vf = F.relu(self.value_features(x))
-        #v = F.relu(self.value(vf))
+        #v = self.value(vf)
 
         #af = F.relu(self.advantage_features(x))
-        #a = F.relu(self.advantages(af))
+        #a = self.advantages(af)
 
         #return v + a - a.mean()
 
     def get_action(self, state):
-        q = self.forward(Variable(torch.from_numpy(state), volatile=True).view(1,8).float())
-        return torch.max(q,1)[1].data[0]
+        with torch.no_grad():
+            q = self.forward(torch.from_numpy(state).view(1,8).float())
+            return torch.max(q,1)[1].data[0]
 

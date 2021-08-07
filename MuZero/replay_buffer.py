@@ -12,12 +12,19 @@ class Replay_buffer:
         inds = [np.random.randint(len(self.replay_buffer)) for _ in range(batch_size)]
         batch = [self.replay_buffer[i].sample(num_initial_states, num_unroll_steps) for i in inds]
         return batch
+    
+    def sample_episodes(self, n_episodes: int) -> ([int], [Episode]):
+        inds = random.sample(range(len(self.replay_buffer)), n_episodes)
+        episodes = [self.replay_buffer[i] for i in inds]
+        return inds, episodes
 
     def add_episode(self, e: Episode):
         if len(self.replay_buffer) >= self.buffer_size:
             self.replay_buffer.pop(0)
         self.replay_buffer.append(e)
 
+    def replace_episode(self, i: int, e: Episode):
+        self.replay_buffer[i] = e
 
 '''
 

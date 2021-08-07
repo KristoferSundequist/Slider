@@ -88,7 +88,7 @@ def test_get_episode():
     num_iterations = 30
     e = get_episode(num_initial_states, num_iterations, representation, dynamics, prediction, 1, game, 0.99)
 
-    assert len(e.states) == num_iterations
+    assert len(e._states) == num_iterations
 
 
 '''
@@ -115,6 +115,6 @@ def test_get_episodeS():
                             dynamics, prediction, 1, gameFactory, 0.99)
 
     assert len(episodes) == num_episodes
-    assert len(episodes[0].states) == num_iterations
+    assert episodes[0].get_num_transitions() == num_iterations
 
-    assert not np.array_equal(episodes[0].states[0], episodes[1].states[0])  # make sure not same data in diff episodes
+    assert not np.array_equal(episodes[0]._states[0], episodes[1]._states[0])  # make sure not same data in diff episodes

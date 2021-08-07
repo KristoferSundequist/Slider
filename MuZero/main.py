@@ -14,6 +14,7 @@ import graphics
 from policy import *
 from MCTS import *
 from get_data import *
+from reanalyze import *
 from episode import *
 from replay_buffer import *
 from train import *
@@ -39,16 +40,17 @@ inner_size = 128
 action_space_size = game.action_space_size
 
 representation = Representation(num_initial_states, state_space_size, inner_size)
-representation_optimizer = torch.optim.Adam(representation.parameters(), lr=3e-4)
+representation_optimizer = torch.optim.AdamW(representation.parameters(), lr=3e-4, weight_decay=1e-4)
+
 
 dynamics = Dynamics(inner_size, action_space_size)
-dynamics_optimizer = torch.optim.Adam(dynamics.parameters(), lr=3e-4)
+dynamics_optimizer = torch.optim.AdamW(dynamics.parameters(), lr=3e-4, weight_decay=1e-4)
 
 prediction = Prediction(inner_size, action_space_size)
-prediction_optimizer = torch.optim.Adam(prediction.parameters(), lr=3e-4)
+prediction_optimizer = torch.optim.AdamW(prediction.parameters(), lr=3e-4, weight_decay=1e-4)
 
-#replay_buffer = Replay_buffer(100)
-replay_buffer = load_from_file('trajectories/buffer7')
+replay_buffer = Replay_buffer(100)
+#replay_buffer = load_from_file('trajectories/new_trajs')
 
 def save_params(name):
     state = {
@@ -76,11 +78,17 @@ def get_data(n_episodes: int, max_episode_length: int, temperature: float, disco
                             representation, dynamics, prediction, temperature, gameFactory, discount)
 
     for e in episodes:
-        logger.rewards.append(sum(e.rewards))
+        logger.rewards.append(e.get_reward_sum())
 
     for e in episodes:
         replay_buffer.add_episode(e)
 
+def do_reanalyze_episodes(n_episodes: int, discount: float = 0.99):
+    inds, episodes = replay_buffer.sample_episodes(n_episodes)
+    reanalyzed_episodes = reanalze_episodes(episodes, num_initial_states, representation, dynamics, prediction, discount, action_space_size)
+
+    for (i,e) in enumerate(reanalyzed_episodes):
+        replay_buffer.replace_episode(inds[i], e)
 
 def train(batch_size: int = 1024, num_unroll_steps: int = 5):
     batch = replay_buffer.sample_batch(batch_size, num_initial_states, num_unroll_steps)
@@ -103,6 +111,8 @@ def main(n_iters: int, n_episodes: int, max_episode_length: int, n_batches: int 
     print("Training...")
     for _ in range(n_batches):
       train(batch_size)
+    print("reanalyzing...")
+    do_reanalyze_episodes(3)
 
   if profile:
     yappi.stop()

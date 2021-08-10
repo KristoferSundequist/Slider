@@ -2,9 +2,10 @@ from collections import namedtuple
 import numpy as np
 import random
 from typing import List
-    
+
 Transition = namedtuple('Transition',
-                    ('state', 'action', 'next_state', 'reward'))
+                        ('state', 'action', 'next_state', 'reward', 'goal', 'next_goal'))
+
 
 class ReplayMemory(object):
 
@@ -22,6 +23,13 @@ class ReplayMemory(object):
 
     def sample(self, batch_size: int) -> List[Transition]:
         return random.sample(self.memory, batch_size)
+
+    def sample_trajectories(self, batch_size: int, trajectory_length: int) -> List[List[Transition]]:
+        trajectories = []
+        for _ in range(batch_size):
+            index = random.randint(0, self.capacity-trajectory_length)
+            trajectories.append(self.memory[index:(index+trajectory_length)])
+        return trajectories
 
     def __len__(self) -> int:
         return len(self.memory)

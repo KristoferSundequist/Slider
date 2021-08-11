@@ -70,11 +70,11 @@ def live(iterations: int, batch_size: int, improve_flag: bool, num_steps: int, r
     print(total_reward)
 
 
-def init_memory(iters=replay_memory_size, num_steps=4):
+def init_memory(iters=replay_memory_size, num_steps=10):
     live(iters, 32, False, num_steps, False, 1)
 
 
-def live_loop(lives, iterations, batch_size, num_steps=3, render=False, polyak=0.005):
+def live_loop(lives, iterations, batch_size, num_steps=10, render=False, polyak=0.005):
     for i in range(lives):
         print(f'Iteration: {i} of {lives}')
         live(iterations, batch_size, True, num_steps, render, polyak)

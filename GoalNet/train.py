@@ -7,6 +7,7 @@ import random
 import math
 import torch.nn.functional as F
 import nstep
+import numpy as np
 
 STATE_SPACE_SIZE = 8
 ACTION_SPACE_SIZE = 4
@@ -37,7 +38,8 @@ def live(iterations: int, batch_size: int, improve_flag: bool, num_steps: int, r
     start = time.time()
     for i in range(iterations):
 
-        goal = goal_network.get_goal(state)
+        noise = np.random.normal(0, 0.05, STATE_SPACE_SIZE)
+        goal = np.clip(goal_network.get_goal(state) + noise, -1, 1)
         action = policy_network.get_action(state, goal)
 
         if render:
@@ -122,6 +124,11 @@ def improve_goal(batch_size):
     batch = replay_memory.sample(batch_size)
     states = torch.FloatTensor([t.state for t in batch])
     goal_loss = -value_network.forward(states, goal_network.forward(states)).mean()
+    # goals = goal_network.forward(states)
+    # values1 = value_network.forward(states, goals)
+    # values2 = value_network2.forward(states, goals)
+    # min_values = torch.min(values1, values2)
+    # goal_loss = -min_values.mean()
     update(goal_network, goal_loss)
 
 

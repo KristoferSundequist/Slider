@@ -1,4 +1,5 @@
-import slider
+#import slider as slider
+import slider as slider
 import policy
 import time
 import torch
@@ -8,6 +9,8 @@ import math
 import torch.nn.functional as F
 import nstep
 import numpy as np
+from graphics import *
+import utils
 
 STATE_SPACE_SIZE = 8
 ACTION_SPACE_SIZE = 4
@@ -28,11 +31,16 @@ replay_memory_size = 100000
 replay_memory = memory.ReplayMemory(replay_memory_size)
 
 # export OMP_NUM_THREADS=1
+ENV_WIDTH = 700
+ENV_HEIGHT = 700
 
 
-def live(iterations: int, batch_size: int, improve_flag: bool, num_steps: int, render: bool, polyak: float):
+def live(iterations: int, batch_size: int, improve_flag: bool, policy_force: float, num_steps: int, render: bool, polyak: float):
+    if render:
+        win = GraphWin("canvas", ENV_WIDTH, ENV_HEIGHT)
+        win.setBackground('lightskyblue')
     n_step = nstep.Nstep(num_steps)
-    g = slider.Game()
+    g = slider.Game(ENV_WIDTH, ENV_HEIGHT)
     state = g.get_state()
     total_reward = 0
     start = time.time()
@@ -44,8 +52,9 @@ def live(iterations: int, batch_size: int, improve_flag: bool, num_steps: int, r
 
         if render:
             with torch.no_grad():
-                value = value_network.forward(torch.from_numpy(state).unsqueeze(0).float(), torch.from_numpy(goal).unsqueeze(0).float())
-                g.render(value.item(), state, 0, goal)
+                value = value_network.forward(torch.from_numpy(state).unsqueeze(
+                    0).float(), torch.from_numpy(goal).unsqueeze(0).float())
+                g.render(win, value)
 
         reward, next_state = g.step(action)
 
@@ -55,10 +64,11 @@ def live(iterations: int, batch_size: int, improve_flag: bool, num_steps: int, r
 
         if i >= num_steps:
             nstate, naction, nnext_state, nreward, goal, next_goal = n_step.get()
-            replay_memory.push(nstate, naction, nnext_state, nreward, goal, next_goal)
+            replay_memory.push(nstate, naction, nnext_state,
+                               nreward, goal, next_goal)
 
         if improve_flag:
-            improve_policy(batch_size*4)
+            improve_policy(batch_size*4, policy_force)
             improve_value(batch_size, num_steps, polyak)
             if i % 2 == 0:
                 improve_goal(batch_size)
@@ -71,13 +81,15 @@ def live(iterations: int, batch_size: int, improve_flag: bool, num_steps: int, r
 
 
 def init_memory(iters=replay_memory_size, num_steps=10):
-    live(iters, 32, False, num_steps, False, 1)
+    live(iters, 32, False, 0, num_steps, False, 1)
 
 
-def live_loop(lives, iterations, batch_size, num_steps=10, render=False, polyak=0.005):
+def live_loop(lives, iterations=10000, batch_size=64, policy_force=0.9, num_steps=10, render=False, polyak=0.005):
     for i in range(lives):
         print(f'Iteration: {i} of {lives}')
-        live(iterations, batch_size, True, num_steps, render, polyak)
+        live(iterations, batch_size, True,
+             policy_force, num_steps, render, polyak)
+
 
 def improve_value(batch_size, num_steps, polyak):
     batch = replay_memory.sample(batch_size)
@@ -98,7 +110,8 @@ def improve_value(batch_size, num_steps, polyak):
         next_values = lagged_value_network.forward(next_states, next_goals)
         next_values2 = lagged_value_network2.forward(next_states, next_goals)
         min_next_values = torch.min(next_values, next_values2)
-        target_values = rewards.view(-1, 1) + math.pow(0.99, num_steps)*min_next_values
+        target_values = rewards.view(-1, 1) + \
+            math.pow(0.99, num_steps)*min_next_values
 
     value_loss = F.smooth_l1_loss(believed_values, target_values)
     update(value_network, value_loss)
@@ -108,19 +121,21 @@ def improve_value(batch_size, num_steps, polyak):
     update(value_network2, value_loss2)
     lagged_value_network2.soft_update(value_network2, polyak)
 
-def improve_policy(batch_size):
+
+def improve_policy(batch_size: int, policy_force: float):
     batch = replay_memory.sample(batch_size)
 
     states = torch.FloatTensor([t.state for t in batch])
-    actions = torch.LongTensor([t.action for t in batch])
+    policy_targets = utils.get_policies_from_actions([t.action for t in batch], ACTION_SPACE_SIZE, policy_force)
     next_states = torch.FloatTensor([t.next_state for t in batch])
 
     policy_logits = policy_network.forward(states, next_states)
-    policy_loss_function = torch.nn.CrossEntropyLoss()
-    policy_loss = policy_loss_function(policy_logits, actions)
+    probs = F.softmax(policy_logits, 1)
+    policy_loss = utils.categorical_cross_entropy(probs, policy_targets)
     update(policy_network, policy_loss)
 
-def improve_goal(batch_size):
+
+def improve_goal(batch_size: int):
     batch = replay_memory.sample(batch_size)
     states = torch.FloatTensor([t.state for t in batch])
     goal_loss = -value_network.forward(states, goal_network.forward(states)).mean()
@@ -139,17 +154,21 @@ def update(network, loss):
         param.grad.data.clamp_(-1, 1)
     network.opt.step()
 
+
 def agent_loop(iterations, cd):
     with torch.no_grad():
-        g = slider.Game()
-        g.render(0, 0, 0, 0)
+        win = GraphWin("canvas", ENV_WIDTH, ENV_HEIGHT)
+        win.setBackground('lightskyblue')
+        g = slider.Game(ENV_WIDTH, ENV_HEIGHT)
+        g.render(win, 0)
         for i in range(iterations):
             state = g.get_state()
             goal = goal_network.get_goal(state)
-            value = value_network.forward(torch.from_numpy(state).unsqueeze(0).float(), torch.from_numpy(goal).unsqueeze(0).float())
+            value = value_network.forward(torch.from_numpy(state).unsqueeze(
+                0).float(), torch.from_numpy(goal).unsqueeze(0).float())
             action = policy_network.get_action(state, goal)
             _, _ = g.step(action)
-            #g.render(round(vs.data[0][0].item(), 2), round(vs.data[0][1].item(), 2), round(
-             #   vs.data[0][2].item(), 2), round(vs.data[0][3].item(), 2))
-            g.render(value.item(), state, 0, goal)
+            # g.render(round(vs.data[0][0].item(), 2), round(vs.data[0][1].item(), 2), round(
+            #   vs.data[0][2].item(), 2), round(vs.data[0][3].item(), 2))
+            g.render(win, value.item())
             time.sleep(cd)

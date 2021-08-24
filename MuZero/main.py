@@ -8,7 +8,7 @@ from torch.utils.data.sampler import BatchSampler, SubsetRandomSampler
 import yappi
 
 #import slider_jumper
-import slider
+import slider_jumper
 import graphics
 
 from policy import *
@@ -27,7 +27,7 @@ game_width = 800
 game_height = 700
 
 
-def gameFactory(): return slider.Game(game_width, game_height)
+def gameFactory(): return slider_jumper.Game(game_width, game_height)
 
 
 

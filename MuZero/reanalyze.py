@@ -25,7 +25,7 @@ def reanalyze_episode(
     for i in range(episode.get_num_transitions()):
         initial_states = episode.gather_initial_state(i, num_initial_states)
 
-        root = MCTS(initial_states, representation, dynamics, prediction, action_space_size, 50, .99)
+        root = MCTS(initial_states, representation, dynamics, prediction, action_space_size, 50, discount)
 
         episode.update_value_and_policy(i, root.get_search_policy(), root.search_value())
 

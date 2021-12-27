@@ -7,8 +7,8 @@ from multiprocessing import Pool, cpu_count
 from torch.utils.data.sampler import BatchSampler, SubsetRandomSampler
 import yappi
 
+import slider
 #import slider_jumper
-import slider_jumper
 import graphics
 
 from policy import *
@@ -27,7 +27,7 @@ game_width = 800
 game_height = 700
 
 
-def gameFactory(): return slider_jumper.Game(game_width, game_height)
+def gameFactory(): return slider.Game(game_width, game_height)
 
 
 
@@ -97,8 +97,8 @@ def train(batch_size: int = 1024, num_unroll_steps: int = 5):
                    dynamics_optimizer, prediction_optimizer, game.action_space_size, logger)
 
 
-#main(10, 6, 2000, 1000, 1024, 0.1)
-def main(n_iters: int, n_episodes: int, max_episode_length: int, n_batches: int = 1000, batch_size: int = 1024, temperature=1, profile=False):
+#main(10, 6, 2000, 1000, 1024, 0.1, False, 0.999)
+def main(n_iters: int, n_episodes: int, max_episode_length: int, n_batches: int = 1000, batch_size: int = 1024, temperature=1, profile=False, discount=0.999):
   if profile:
     yappi.set_clock_type("wall")
     yappi.start()
@@ -106,13 +106,13 @@ def main(n_iters: int, n_episodes: int, max_episode_length: int, n_batches: int 
   for i in range(n_iters):
     print(f'Iteration {i} of {n_iters}..')
     print("Gathering data...")
-    get_data(n_episodes, max_episode_length, temperature)
+    get_data(n_episodes, max_episode_length, temperature, discount)
     print(logger.get_mean_rewards_of_last_n(10))
     print("Training...")
     for _ in range(n_batches):
       train(batch_size)
-    print("reanalyzing...")
-    do_reanalyze_episodes(3)
+    #print("reanalyzing...")
+    #do_reanalyze_episodes(3)
 
   if profile:
     yappi.stop()
@@ -132,7 +132,7 @@ def clear(win):
     win.update()
 
 
-def agent_loop(iterations: int, temperature: float = 1, num_simulations = 50):
+def agent_loop(iterations: int, temperature: float = 1, num_simulations = 50, discount = 0.99):
     win = graphics.GraphWin("canvas", game_width, game_height)
     win.setBackground('lightskyblue')
 
@@ -148,7 +148,7 @@ def agent_loop(iterations: int, temperature: float = 1, num_simulations = 50):
         initial_states.pop(0)
         initial_states.append(state)
 
-        root = MCTS(initial_states, representation, dynamics, prediction, action_space_size, num_simulations, .99)
+        root = MCTS(initial_states, representation, dynamics, prediction, action_space_size, num_simulations, discount)
 
         action = sample_action(root, temperature)
         #action = get_best_action(root)

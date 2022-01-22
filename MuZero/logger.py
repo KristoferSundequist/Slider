@@ -8,5 +8,5 @@ class Logger:
         sum_rewards = sum(last_n_rewards)
         return sum_rewards/len(last_n_rewards)
 
-    def add_head_losses(self, total_loss, policy_loss, value_loss, reward_loss):
-        self.head_losses.append((total_loss, policy_loss, value_loss, reward_loss))
+    def add_head_losses(self, total_loss, policy_loss, value_loss, reward_loss, sim_loss):
+        self.head_losses.append((total_loss, policy_loss, value_loss, reward_loss, sim_loss))

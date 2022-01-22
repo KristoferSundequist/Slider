@@ -68,5 +68,5 @@ def test_sample_batch():
     assert len(batch) == 32
     
     (initial_states, targets) = batch[0]
-    assert len(initial_states) == 7
+    assert len(initial_states) == 7 + 5
     assert len(targets) == 5

@@ -202,6 +202,41 @@ def test_prediction_forward_shape():
     assert policy.shape == torch.Size([batch_size, action_space_size])
     assert value.shape == torch.Size([batch_size, 1])
 
+'''
+
+Projector
+
+'''
+
+
+class Projector(nn.Module):
+    def __init__(self, inner_size: int):
+        super(Projector, self).__init__()
+
+        self.inner_size = inner_size
+
+        self.hidden = nn.Linear(inner_size, 256)
+        self.out = nn.Linear(256, inner_size)
+
+
+    def forward(self, inner_state: torch.Tensor) -> torch.Tensor:
+        next_state = F.relu(self.hidden(inner_state))
+        next_state = self.out(next_state)
+        return next_state
+
+
+def test_projector_forward_shape():
+    inner_size = 20
+    batch_size = 7
+
+    p = Projector(inner_size)
+
+    inner_states = torch.rand(batch_size, inner_size)
+
+    projection = p.forward(inner_states)
+    assert inner_states.shape == torch.Size([batch_size, inner_size])
+    assert projection.shape == torch.Size([batch_size, inner_size])
+
 ######################
 
 

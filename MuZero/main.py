@@ -6,6 +6,7 @@ import copy
 from multiprocessing import Pool, cpu_count
 from torch.utils.data.sampler import BatchSampler, SubsetRandomSampler
 import yappi
+from datetime import datetime
 
 import slider
 #import slider_jumper
@@ -42,12 +43,17 @@ action_space_size = game.action_space_size
 representation = Representation(num_initial_states, state_space_size, inner_size)
 representation_optimizer = torch.optim.AdamW(representation.parameters(), lr=3e-4, weight_decay=1e-4)
 
-
 dynamics = Dynamics(inner_size, action_space_size)
 dynamics_optimizer = torch.optim.AdamW(dynamics.parameters(), lr=3e-4, weight_decay=1e-4)
 
 prediction = Prediction(inner_size, action_space_size)
 prediction_optimizer = torch.optim.AdamW(prediction.parameters(), lr=3e-4, weight_decay=1e-4)
+
+projector = Projector(inner_size)
+projector_optimizer = torch.optim.AdamW(projector.parameters(), lr=3e-4, weight_decay=1e-4)
+
+simpredictor = Projector(inner_size)
+simpredictor_optimizer = torch.optim.AdamW(simpredictor.parameters(), lr=3e-4, weight_decay=1e-4)
 
 replay_buffer = Replay_buffer(100)
 #replay_buffer = load_from_file('trajectories/new_trajs')
@@ -60,6 +66,10 @@ def save_params(name):
         "dyn_opt": dynamics_optimizer.state_dict(),
         "pred": prediction.state_dict(),
         "pred_opt": prediction_optimizer.state_dict(),
+        "projector": projector.state_dict(),
+        "projector_optimizer": projector_optimizer.state_dict(),
+        "simpredictor": simpredictor.state_dict(),
+        "simpredictor_optimizer": simpredictor_optimizer.state_dict(),
     }
     torch.save(state, f'./weights/{name}')
 
@@ -72,6 +82,10 @@ def load_weights(name):
     dynamics_optimizer.load_state_dict(state['dyn_opt'])
     prediction.load_state_dict(state['pred'])
     prediction_optimizer.load_state_dict(state['pred_opt'])
+    projector.load_state_dict(state['projector'])
+    projector_optimizer.load_state_dict(state['projector_optimizer'])
+    simpredictor.load_state_dict(state['simpredictor'])
+    simpredictor_optimizer.load_state_dict(state['simpredictor_optimizer'])
 
 def get_data(n_episodes: int, max_episode_length: int, temperature: float, discount: float = 0.99):
     episodes = get_episodes(n_episodes, num_initial_states, max_episode_length,
@@ -94,17 +108,17 @@ def train(batch_size: int = 1024, num_unroll_steps: int = 5):
     batch = replay_buffer.sample_batch(batch_size, num_initial_states, num_unroll_steps)
 
     train_on_batch(batch, representation, dynamics, prediction, representation_optimizer,
-                   dynamics_optimizer, prediction_optimizer, game.action_space_size, logger)
+                   dynamics_optimizer, prediction_optimizer, projector, projector_optimizer, simpredictor, simpredictor_optimizer, game.action_space_size, num_unroll_steps, num_initial_states, logger)
 
 
-#main(10, 6, 2000, 1000, 1024, 0.1, False, 0.999)
+#main(20, 6, 4000, 1000, 1024, 0.1, False, 0.99)
 def main(n_iters: int, n_episodes: int, max_episode_length: int, n_batches: int = 1000, batch_size: int = 1024, temperature=1, profile=False, discount=0.999):
   if profile:
     yappi.set_clock_type("wall")
     yappi.start()
 
   for i in range(n_iters):
-    print(f'Iteration {i} of {n_iters}..')
+    print(f'Iteration {i} of {n_iters}. {datetime.now()}.')
     print("Gathering data...")
     get_data(n_episodes, max_episode_length, temperature, discount)
     print(logger.get_mean_rewards_of_last_n(10))
@@ -260,13 +274,14 @@ def test_MCTS():
 
 
 def test_correct_actions_in_train_batch():
+    initial_states = 7
+    num_unroll_steps = 5
     main(2, 6, 100, 4, 8)
-    batch = replay_buffer.sample_batch(3, 7, 5)
+    batch = replay_buffer.sample_batch(3, initial_states, num_unroll_steps)
     targets = [e[1] for e in batch]
-    num_unroll_steps = len(targets[0])
     g = gameFactory()
     one_hot_actions, search_policies, value_targets, observed_rewards, isNotDone = prepare_targets(
-        targets, g.action_space_size)
+        targets, num_unroll_steps, g.action_space_size)
 
     actions = [[ep_targs[2] for ep_targs in e] for e in targets]
 

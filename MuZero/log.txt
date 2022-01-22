@@ -1,0 +1,3 @@
+simsiamloss:
+main(20, 6, 4000, 1000, 1024, 0.1, False, 0.99)
+21 reward after 18 iters

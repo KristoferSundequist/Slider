@@ -111,13 +111,13 @@ def train_on_batch(
         reward, inner_states = dynamics.forward(inner_states, one_hot_actions[i])
 
         # similarity loss
-        #with torch.no_grad():
-        #    real_states = [e[0][(i+1):(i+num_initial_states+1)] for e in batch]
-        #    repr_state = representation.forward(representation.prepare_states(real_states))
-        #    repr_projector_state = projector.forward(repr_state).detach()
-        #sim_inner_projector_state = projector.forward(inner_states)
-        #sim_predictor_state = simpredictor.forward(sim_inner_projector_state)
-        #sim_loss = -cosine_sim(sim_predictor_state, repr_projector_state).mean()
+        with torch.no_grad():
+            real_states = [e[0][(i+1):(i+num_initial_states+1)] for e in batch]
+            repr_state = representation.forward(representation.prepare_states(real_states))
+            repr_projector_state = projector.forward(repr_state).detach()
+        sim_inner_projector_state = projector.forward(inner_states)
+        sim_predictor_state = simpredictor.forward(sim_inner_projector_state)
+        sim_loss = -cosine_sim(sim_predictor_state, repr_projector_state).mean()
 
         assert reward.shape == observed_rewards[i].shape
         #reward_loss = categorical_cross_entropy(reward, observed_rewards[i])
@@ -133,12 +133,12 @@ def train_on_batch(
         #value_loss = categorical_cross_entropy(value, value_targets[i+1])
         value_loss = scalar_loss(value, value_targets[i+1])
 
-        step_loss = (policy_loss + value_loss + reward_loss)/num_unroll_steps
+        step_loss = (policy_loss + value_loss + reward_loss + sim_loss)/num_unroll_steps
 
         pl += policy_loss.item()
         vl += value_loss.item()
         rl += reward_loss.item()
-        #sl += sim_loss.item()
+        sl += sim_loss.item()
 
         loss += step_loss
         # TODO: dont add to loss if isNotDone
@@ -147,8 +147,8 @@ def train_on_batch(
     representation.zero_grad()
     dynamics.zero_grad()
     prediction.zero_grad()
-    #projector.zero_grad()
-    #simpredictor.zero_grad()
+    projector.zero_grad()
+    simpredictor.zero_grad()
 
     loss.backward()
 
@@ -156,14 +156,14 @@ def train_on_batch(
     torch.nn.utils.clip_grad_norm_(representation.parameters(), max_grad_norm)
     torch.nn.utils.clip_grad_norm_(dynamics.parameters(), max_grad_norm)
     torch.nn.utils.clip_grad_norm_(prediction.parameters(), max_grad_norm)
-    #torch.nn.utils.clip_grad_norm_(projector.parameters(), max_grad_norm)
-    #torch.nn.utils.clip_grad_norm_(simpredictor.parameters(), max_grad_norm)
+    torch.nn.utils.clip_grad_norm_(projector.parameters(), max_grad_norm)
+    torch.nn.utils.clip_grad_norm_(simpredictor.parameters(), max_grad_norm)
 
     representation_optimizer.step()
     dynamics_optimizer.step()
     prediction_optimizer.step()
-    #projector_optimizer.step()
-    #simpredictor_optimizer.step()
+    projector_optimizer.step()
+    simpredictor_optimizer.step()
 
 '''
 

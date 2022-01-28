@@ -4,11 +4,17 @@ main(20, 6, 4000, 1000, 1024, 0.1, False, 0.99)
 -------------------
 -- sim siam loss --
 -------------------
+6~ min per iters
 commit: 587b22e9b19e6ed20d156b3e54bf91765da124df
 try 1:
 -21 reward after 18 iters
 try 2:
 -27 reward after 23 iters
+try 3:
+-25 after 20 iters
+-17 after 40 iters
+-9 after 60 iters
+-4 after 70 iters
 
 ------------------------
 -- no sim loss at all --

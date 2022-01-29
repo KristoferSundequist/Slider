@@ -27,3 +27,12 @@ try 2:
 -15 after 20 iters
 -5 after 40 iters
 -1 after 60 iters
+
+-------------------------------
+-- simple sim loss (no siam) --
+-------------------------------
+5~ min per iter
+try1:
+-13 after 20 iters
+-2 after 40 iters
+-1 after 60 iters

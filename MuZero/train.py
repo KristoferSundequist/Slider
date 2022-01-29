@@ -113,11 +113,12 @@ def train_on_batch(
         # similarity loss
         with torch.no_grad():
             real_states = [e[0][(i+1):(i+num_initial_states+1)] for e in batch]
-            repr_state = representation.forward(representation.prepare_states(real_states))
-            repr_projector_state = projector.forward(repr_state).detach()
-        sim_inner_projector_state = projector.forward(inner_states)
-        sim_predictor_state = simpredictor.forward(sim_inner_projector_state)
-        sim_loss = -cosine_sim(sim_predictor_state, repr_projector_state).mean()
+            repr_state = representation.forward(representation.prepare_states(real_states)).detach()
+            #repr_projector_state = projector.forward(repr_state).detach()
+        #sim_inner_projector_state = projector.forward(inner_states)
+        #sim_predictor_state = simpredictor.forward(sim_inner_projector_state)
+        #sim_loss = -cosine_sim(sim_predictor_state, repr_projector_state).mean()
+        sim_loss = -cosine_sim(inner_states, repr_state).mean()
 
         assert reward.shape == observed_rewards[i].shape
         #reward_loss = categorical_cross_entropy(reward, observed_rewards[i])
@@ -147,8 +148,8 @@ def train_on_batch(
     representation.zero_grad()
     dynamics.zero_grad()
     prediction.zero_grad()
-    projector.zero_grad()
-    simpredictor.zero_grad()
+    #projector.zero_grad()
+    #simpredictor.zero_grad()
 
     loss.backward()
 
@@ -156,14 +157,14 @@ def train_on_batch(
     torch.nn.utils.clip_grad_norm_(representation.parameters(), max_grad_norm)
     torch.nn.utils.clip_grad_norm_(dynamics.parameters(), max_grad_norm)
     torch.nn.utils.clip_grad_norm_(prediction.parameters(), max_grad_norm)
-    torch.nn.utils.clip_grad_norm_(projector.parameters(), max_grad_norm)
-    torch.nn.utils.clip_grad_norm_(simpredictor.parameters(), max_grad_norm)
+    #torch.nn.utils.clip_grad_norm_(projector.parameters(), max_grad_norm)
+    #torch.nn.utils.clip_grad_norm_(simpredictor.parameters(), max_grad_norm)
 
     representation_optimizer.step()
     dynamics_optimizer.step()
     prediction_optimizer.step()
-    projector_optimizer.step()
-    simpredictor_optimizer.step()
+    #projector_optimizer.step()
+    #simpredictor_optimizer.step()
 
 '''
 
@@ -178,3 +179,11 @@ def test_cosineloss():
     second = torch.tensor([[1,2,3],[4,5,2]])
     sim_loss = -cosine_loss(first, second)
     assert -cosine_loss(first, first).mean() < -cosine_loss(first, second).mean()
+
+def test_cosineloss_input_order_invariance():
+    cosine_loss = nn.CosineSimilarity()
+    first = torch.Tensor([[1,2,3],[4,5,6]])
+    second = torch.tensor([[1,2,3],[4,5,2]])
+    sim_loss1 = -cosine_loss(first, second).mean()
+    sim_loss2 = -cosine_loss(second, first).mean()
+    assert sim_loss1 == sim_loss2

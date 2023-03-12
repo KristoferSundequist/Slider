@@ -171,11 +171,11 @@ class Game():
 
         reward = 0
         if self.intersect(self.s, self.t):
-            reward += 1
+            reward += 0.2
             self.t.reset()
 
         if self.intersect(self.s, self.enemy):
-            reward -= 5
+            reward -= 1
             self.enemy.reset()
 
         return reward, self.get_state()

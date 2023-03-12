@@ -31,7 +31,6 @@ game_height = 700
 def gameFactory(): return slider.Game(game_width, game_height)
 
 
-
 logger = Logger()
 game = gameFactory()
 
@@ -40,23 +39,30 @@ state_space_size = game.state_space_size
 inner_size = 128
 action_space_size = game.action_space_size
 
-representation = Representation(num_initial_states, state_space_size, inner_size)
-representation_optimizer = torch.optim.AdamW(representation.parameters(), lr=3e-4, weight_decay=1e-4)
+representation = Representation(
+    num_initial_states, state_space_size, inner_size)
+representation_optimizer = torch.optim.AdamW(
+    representation.parameters(), lr=3e-4, weight_decay=1e-4)
 
 dynamics = Dynamics(inner_size, action_space_size)
-dynamics_optimizer = torch.optim.AdamW(dynamics.parameters(), lr=3e-4, weight_decay=1e-4)
+dynamics_optimizer = torch.optim.AdamW(
+    dynamics.parameters(), lr=3e-4, weight_decay=1e-4)
 
 prediction = Prediction(inner_size, action_space_size)
-prediction_optimizer = torch.optim.AdamW(prediction.parameters(), lr=3e-4, weight_decay=1e-4)
+prediction_optimizer = torch.optim.AdamW(
+    prediction.parameters(), lr=3e-4, weight_decay=1e-4)
 
 projector = Projector(inner_size)
-projector_optimizer = torch.optim.AdamW(projector.parameters(), lr=3e-4, weight_decay=1e-4)
+projector_optimizer = torch.optim.AdamW(
+    projector.parameters(), lr=3e-4, weight_decay=1e-4)
 
 simpredictor = Projector(inner_size)
-simpredictor_optimizer = torch.optim.AdamW(simpredictor.parameters(), lr=3e-4, weight_decay=1e-4)
+simpredictor_optimizer = torch.optim.AdamW(
+    simpredictor.parameters(), lr=3e-4, weight_decay=1e-4)
 
 replay_buffer = Replay_buffer(100)
 #replay_buffer = load_from_file('trajectories/new_trajs')
+
 
 def save_params(name):
     state = {
@@ -73,6 +79,7 @@ def save_params(name):
     }
     torch.save(state, f'./weights/{name}')
 
+
 def load_weights(name):
     state = torch.load(f'./weights/{name}')
 
@@ -87,6 +94,7 @@ def load_weights(name):
     simpredictor.load_state_dict(state['simpredictor'])
     simpredictor_optimizer.load_state_dict(state['simpredictor_optimizer'])
 
+
 def get_data(n_episodes: int, max_episode_length: int, temperature: float, discount: float = 0.99):
     episodes = get_episodes(n_episodes, num_initial_states, max_episode_length,
                             representation, dynamics, prediction, temperature, gameFactory, discount)
@@ -97,40 +105,65 @@ def get_data(n_episodes: int, max_episode_length: int, temperature: float, disco
     for e in episodes:
         replay_buffer.add_episode(e)
 
+
 def do_reanalyze_episodes(n_episodes: int, discount: float = 0.99):
     inds, episodes = replay_buffer.sample_episodes(n_episodes)
-    reanalyzed_episodes = reanalze_episodes(episodes, num_initial_states, representation, dynamics, prediction, discount, action_space_size)
+    reanalyzed_episodes = reanalze_episodes(
+        episodes, num_initial_states, representation, dynamics, prediction, discount, action_space_size)
 
-    for (i,e) in enumerate(reanalyzed_episodes):
+    for (i, e) in enumerate(reanalyzed_episodes):
         replay_buffer.replace_episode(inds[i], e)
 
+
 def train(batch_size: int = 1024, num_unroll_steps: int = 5):
-    batch = replay_buffer.sample_batch(batch_size, num_initial_states, num_unroll_steps)
+    batch = replay_buffer.sample_batch(
+        batch_size, num_initial_states, num_unroll_steps)
 
     train_on_batch(batch, representation, dynamics, prediction, representation_optimizer,
                    dynamics_optimizer, prediction_optimizer, projector, projector_optimizer, simpredictor, simpredictor_optimizer, game.action_space_size, num_unroll_steps, num_initial_states, logger)
 
 
-#main(20, 6, 4000, 1000, 1024, 0.1, False, 0.99)
-def main(n_iters: int, n_episodes: int, max_episode_length: int, n_batches: int = 1000, batch_size: int = 1024, temperature=1, profile=False, discount=0.999):
-  if profile:
-    yappi.set_clock_type("wall")
-    yappi.start()
-
-  for i in range(n_iters):
-    print(f'Iteration {i} of {n_iters}. {datetime.now()}.')
-    print("Gathering data...")
-    get_data(n_episodes, max_episode_length, temperature, discount)
-    print(logger.get_mean_rewards_of_last_n(10))
-    print("Training...")
-    for _ in range(n_batches):
-      train(batch_size)
-    #print("reanalyzing...")
-    #do_reanalyze_episodes(3)
-
-  if profile:
-    yappi.stop()
-    yappi.get_func_stats().print_all()
+#main(20, 6, 4000, 1000, 1024, 5, 0.1, 0.99)
+def main(
+    n_iters: int,
+    n_episodes: int,
+    max_episode_length: int,
+    n_batches: int = 1000,
+    batch_size: int = 1024,
+    num_unroll_steps=5,
+    temperature=1,
+    discount=0.99
+):
+    for i in range(n_iters):
+        print(f'Iteration {i} of {n_iters}. {datetime.now()}.')
+        print("Training...")
+        for _ in range(n_batches):
+            batch = replay_buffer.sample_batch(
+                batch_size, num_initial_states, num_unroll_steps)
+            train_on_batch(
+                batch,
+                representation,
+                dynamics,
+                prediction,
+                representation_optimizer,
+                dynamics_optimizer,
+                prediction_optimizer,
+                projector,
+                projector_optimizer,
+                simpredictor,
+                simpredictor_optimizer,
+                game.action_space_size,
+                num_unroll_steps,
+                num_initial_states,
+                logger
+            )
+        print("Gathering data...")
+        get_data(n_episodes, max_episode_length, temperature, discount)
+        print(logger.get_mean_rewards_of_last_n(10))
+        tensor_logger.add_scalar("Rewards", logger.get_mean_rewards_of_last_n(10), main_counter.count)
+        main_counter.increment()
+        # print("reanalyzing...")
+        # do_reanalyze_episodes(3)
 
 
 '''
@@ -146,7 +179,7 @@ def clear(win):
     win.update()
 
 
-def agent_loop(iterations: int, temperature: float = 1, num_simulations = 50, discount = 0.99):
+def agent_loop(iterations: int, temperature: float = 1, num_simulations=50, discount=0.99):
     win = graphics.GraphWin("canvas", game_width, game_height)
     win.setBackground('lightskyblue')
 
@@ -162,7 +195,8 @@ def agent_loop(iterations: int, temperature: float = 1, num_simulations = 50, di
         initial_states.pop(0)
         initial_states.append(state)
 
-        root = MCTS(initial_states, representation, dynamics, prediction, action_space_size, num_simulations, discount)
+        root = MCTS(initial_states, representation, dynamics,
+                    prediction, action_space_size, num_simulations, discount)
 
         action = sample_action(root, temperature)
         #action = get_best_action(root)
@@ -171,10 +205,12 @@ def agent_loop(iterations: int, temperature: float = 1, num_simulations = 50, di
         clear(win)
         game.render(win)
         graphics.Text(graphics.Point(300, 300), reward).draw(win)
-        graphics.Text(graphics.Point(500, 500), "value:" + str(root.search_value())).draw(win)
+        graphics.Text(graphics.Point(500, 500), "value:" +
+                      str(root.search_value())).draw(win)
         graphics.Text(graphics.Point(500, 600), "rewards:" +
                       str(root.get_mean_reward())).draw(win)
     win.close()
+
 
 def human_play(iterations: int, record: bool = False):
     win = graphics.GraphWin("canvas", game_width, game_height)
@@ -188,33 +224,33 @@ def human_play(iterations: int, record: bool = False):
         "Down": 3,
         "Left": 4,
         "space": 5
-      }
-
+    }
 
     episode = Episode(game.state_space_size)
 
     for i in range(iterations):
         state = game.get_state()
         key = win.checkKey()
-        
+
         action = key_to_action_map[key] if key in key_to_action_map else 0
         reward, _ = game.step(action)
-        
+
         clear(win)
         game.render(win)
         graphics.Text(graphics.Point(300, 300), reward).draw(win)
         graphics.Text(graphics.Point(100, 100), "KEY:" + key).draw(win)
-        
 
-        action_one_hot = [0.8 if i == action else (0.2/(game.action_space_size-1)) for i in range(game.action_space_size)]
-        
+        action_one_hot = [0.8 if i == action else (
+            0.2/(game.action_space_size-1)) for i in range(game.action_space_size)]
+
         episode.add_transition(reward, action, state, action_one_hot, 0.0)
         time.sleep(0.02)
-        
-    if record:        
-      episode.calc_targets(0.99)
-      replay_buffer.add_episode(episode)
+
+    if record:
+        episode.calc_targets(0.99)
+        replay_buffer.add_episode(episode)
     win.close()
+
 
 '''
 
@@ -252,7 +288,8 @@ def test_MCTS():
         initial_states.pop(0)
         initial_states.append(state)
 
-        root = MCTS(initial_states, representation, dynamics, prediction, action_space_size, 50, .99)
+        root = MCTS(initial_states, representation, dynamics,
+                    prediction, action_space_size, 50, .99)
 
         action = sample_action(root, 1)
         #action = get_best_action(root)
@@ -263,14 +300,13 @@ def test_MCTS():
     win.setBackground('lightskyblue')
     game.render(win)
     graphics.Text(graphics.Point(300, 300), reward).draw(win)
-    graphics.Text(graphics.Point(500, 500), "value:" + str(root.search_value())).draw(win)
+    graphics.Text(graphics.Point(500, 500), "value:" +
+                  str(root.search_value())).draw(win)
 
     graphics.Text(graphics.Point(500, 600), "rewards:" +
                   str(root.get_mean_reward())).draw(win)
     # time.sleep(1)a
     assert True
-
-
 
 
 def test_correct_actions_in_train_batch():

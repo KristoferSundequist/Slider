@@ -1,3 +1,17 @@
+from torch.utils.tensorboard import SummaryWriter
+
+tensor_logger = SummaryWriter()
+
+class Counter:
+    def __init__(self):
+        self.count = 0
+    
+    def increment(self):
+        self.count = self.count + 1
+
+batch_counter = Counter()
+main_counter = Counter()
+
 class Logger:
     def __init__(self):
         self.head_losses: [(float, float, float, float, float)] = []

@@ -145,6 +145,14 @@ def train_on_batch(
         # TODO: dont add to loss if isNotDone
 
     logger.add_head_losses(loss.item(), pl/num_unroll_steps, vl/num_unroll_steps, rl/num_unroll_steps, sl/num_unroll_steps)
+    tensor_logger.add_scalar("Loss/policy", pl/num_unroll_steps, batch_counter.count)
+    tensor_logger.add_scalar("Loss/value", vl/num_unroll_steps, batch_counter.count)
+    tensor_logger.add_scalar("Loss/reward", rl/num_unroll_steps, batch_counter.count)
+    tensor_logger.add_scalar("Loss/sim", sl/num_unroll_steps, batch_counter.count)
+    tensor_logger.add_scalar("Loss/total", loss.item(), batch_counter.count)
+    
+    batch_counter.increment()
+
     representation.zero_grad()
     dynamics.zero_grad()
     prediction.zero_grad()

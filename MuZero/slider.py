@@ -166,7 +166,7 @@ class Game:
     def __init__(self, width, height):
         self.s = Slider(width, height)
         self.t = Target(50, width, height)
-        self.enemy = Enemy(30,3,width, height)
+        self.enemy = Enemy(30,1,width, height)
         self.width = width
         self.height = height
 

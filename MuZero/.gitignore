@@ -3,3 +3,4 @@ __pycache__
 .pip8
 weights/*
 trajectories/*
+runs

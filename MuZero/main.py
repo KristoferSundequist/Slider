@@ -5,7 +5,6 @@ import time
 import copy
 from multiprocessing import Pool, cpu_count
 from torch.utils.data.sampler import BatchSampler, SubsetRandomSampler
-import yappi
 from datetime import datetime
 
 import slider
@@ -60,9 +59,17 @@ simpredictor = Projector(inner_size)
 simpredictor_optimizer = torch.optim.AdamW(
     simpredictor.parameters(), lr=3e-4, weight_decay=1e-4)
 
-replay_buffer = Replay_buffer(100)
-#replay_buffer = load_from_file('trajectories/new_trajs')
+#replay_buffer = Replay_buffer(100)
+replay_buffer = load_from_file('trajectories/trajs20230628')
 
+def save(name):
+    save_to_file(replay_buffer, f'trajectories/{name}')
+    save_params(name)
+
+def load(name):
+    global replay_buffer
+    replay_buffer = load_from_file(f'trajectories/{name}')
+    load_weights(name)
 
 def save_params(name):
     state = {
@@ -106,10 +113,10 @@ def get_data(n_episodes: int, max_episode_length: int, temperature: float, disco
         replay_buffer.add_episode(e)
 
 
-def do_reanalyze_episodes(n_episodes: int, discount: float = 0.99):
+def do_reanalyze_episodes(n_episodes: int, num_unroll_steps:int, discount: float = 0.99):
     inds, episodes = replay_buffer.sample_episodes(n_episodes)
     reanalyzed_episodes = reanalze_episodes(
-        episodes, num_initial_states, representation, dynamics, prediction, discount, action_space_size)
+        episodes, num_initial_states, representation, dynamics, prediction, discount, action_space_size, num_unroll_steps)
 
     for (i, e) in enumerate(reanalyzed_episodes):
         replay_buffer.replace_episode(inds[i], e)
@@ -136,10 +143,15 @@ def main(
 ):
     for i in range(n_iters):
         print(f'Iteration {i} of {n_iters}. {datetime.now()}.')
+
+        print("Gathering data...")
+        get_data(n_episodes, max_episode_length, temperature, discount)
+        print(logger.get_mean_rewards_of_last_n(10))
+        main_counter.increment()
+
         print("Training...")
         for _ in range(n_batches):
-            batch = replay_buffer.sample_batch(
-                batch_size, num_initial_states, num_unroll_steps)
+            batch = replay_buffer.sample_batch(batch_size, num_initial_states, num_unroll_steps)
             train_on_batch(
                 batch,
                 representation,
@@ -157,13 +169,8 @@ def main(
                 num_initial_states,
                 logger
             )
-        print("Gathering data...")
-        get_data(n_episodes, max_episode_length, temperature, discount)
-        print(logger.get_mean_rewards_of_last_n(10))
-        tensor_logger.add_scalar("Rewards", logger.get_mean_rewards_of_last_n(10), main_counter.count)
-        main_counter.increment()
-        # print("reanalyzing...")
-        # do_reanalyze_episodes(3)
+        #print("reanalyzing...")
+        #do_reanalyze_episodes(2, num_unroll_steps)
 
 
 '''

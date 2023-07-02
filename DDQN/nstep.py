@@ -1,15 +1,15 @@
 import math
+import globals
 
 class Nstep(object):
 
-    def __init__(self, n):
-        self.n = n
+    def __init__(self):
         self.states = []
         self.actions = []
         self.rewards = []
 
     def push(self, state, action, reward):
-        if len(self.states) >= self.n:
+        if len(self.states) > globals.nsteps:
             self.states.pop(0)
             self.actions.pop(0)
             self.rewards.pop(0)
@@ -19,9 +19,9 @@ class Nstep(object):
 
     def get(self):
         reward = 0
-        for i in range(self.n):
-            reward += math.pow(0.99,i)*self.rewards[i]
-        return self.states[0], self.actions[0], self.states[self.n-1], reward
+        for i in range(globals.nsteps):
+            reward += math.pow(globals.discount_factor, i)*self.rewards[i]
+        return self.states[0], self.actions[0], self.states[globals.nsteps], reward
         
         
         

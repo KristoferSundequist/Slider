@@ -20,11 +20,11 @@ class Episode:
     def get_num_transitions(self) -> int:
         return len(self._states)
 
-    def update_value_and_policy(self, update_index: int, new_policy: [float], new_value: float):
+    def update_value_and_policy(self, update_index: int, new_policy: List[float], new_value: float):
         self._search_policies[update_index] = new_policy
         self._search_values[update_index] = new_value
 
-    def add_transition(self, reward: float, action: int, state: np.ndarray, search_policy: [float], search_value: float):
+    def add_transition(self, reward: float, action: int, state: np.ndarray, search_policy: List[float], search_value: float):
         self._rewards.append(reward)
         self._actions.append(action)
         self._states.append(state)
@@ -55,7 +55,7 @@ class Episode:
     # returns [(value, reward, action, search_policy, isNotDone)]
 
     def _make_targets(self, state_index: int, num_unroll_steps: int) \
-            -> [(float, float, int, [float], bool)]:
+            -> [(float, float, int, List[float], bool)]:
         targets = []
         action_space_size = len(self._search_policies[0])
         for current_index in range(state_index, state_index + num_unroll_steps):
@@ -69,7 +69,7 @@ class Episode:
         return targets
 
     # OLD WORKING VERSION
-    def gather_initial_state_old(self, state_index: int, num_initial_states: int) -> [np.ndarray]:
+    def gather_initial_state_old(self, state_index: int, num_initial_states: int) -> List[np.ndarray]:
         initial_states = [np.zeros(self._state_space_size)
                           for i in range(num_initial_states)]
 
@@ -95,7 +95,7 @@ class Episode:
         return initial_states
 
     def sample(self, num_initial_states: int, num_unroll_steps: int) \
-            -> ([np.ndarray], [(float, float, int, [float], bool)]):
+            -> (List[np.ndarray], [(float, float, int, List[float], bool)]):
 
         state_index = np.random.randint(len(self._states)-num_unroll_steps)
         initial_states = self.gather_initial_state(state_index, num_initial_states, num_unroll_steps)

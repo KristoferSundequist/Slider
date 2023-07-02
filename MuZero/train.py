@@ -111,14 +111,14 @@ def train_on_batch(
         reward, inner_states = dynamics.forward(inner_states, one_hot_actions[i])
 
         # similarity loss
-        with torch.no_grad():
-            real_states = [e[0][(i+1):(i+num_initial_states+1)] for e in batch]
-            repr_state = representation.forward(representation.prepare_states(real_states)).detach()
+        #with torch.no_grad():
+        #    real_states = [e[0][(i+1):(i+num_initial_states+1)] for e in batch]
+        #    repr_state = representation.forward(representation.prepare_states(real_states)).detach()
             #repr_projector_state = projector.forward(repr_state).detach()
         #sim_inner_projector_state = projector.forward(inner_states)
         #sim_predictor_state = simpredictor.forward(sim_inner_projector_state)
         #sim_loss = -cosine_sim(sim_predictor_state, repr_projector_state).mean()
-        sim_loss = -cosine_sim(inner_states, repr_state).mean()
+        #sim_loss = -cosine_sim(inner_states, repr_state).mean()
 
         assert reward.shape == observed_rewards[i].shape
         #reward_loss = categorical_cross_entropy(reward, observed_rewards[i])
@@ -134,22 +134,19 @@ def train_on_batch(
         #value_loss = categorical_cross_entropy(value, value_targets[i+1])
         value_loss = scalar_loss(value, value_targets[i+1])
 
-        step_loss = (policy_loss + value_loss + reward_loss + sim_loss)/num_unroll_steps
+        #step_loss = (policy_loss + value_loss + reward_loss + sim_loss)/num_unroll_steps
+        step_loss = (policy_loss + value_loss + reward_loss)/num_unroll_steps
 
         pl += policy_loss.item()
         vl += value_loss.item()
         rl += reward_loss.item()
-        sl += sim_loss.item()
+        #sl += sim_loss.item()
 
         loss += step_loss
         # TODO: dont add to loss if isNotDone
 
-    logger.add_head_losses(loss.item(), pl/num_unroll_steps, vl/num_unroll_steps, rl/num_unroll_steps, sl/num_unroll_steps)
-    tensor_logger.add_scalar("Loss/policy", pl/num_unroll_steps, batch_counter.count)
-    tensor_logger.add_scalar("Loss/value", vl/num_unroll_steps, batch_counter.count)
-    tensor_logger.add_scalar("Loss/reward", rl/num_unroll_steps, batch_counter.count)
-    tensor_logger.add_scalar("Loss/sim", sl/num_unroll_steps, batch_counter.count)
-    tensor_logger.add_scalar("Loss/total", loss.item(), batch_counter.count)
+    #logger.add_head_losses(loss.item(), pl/num_unroll_steps, vl/num_unroll_steps, rl/num_unroll_steps, sl/num_unroll_steps)
+    logger.add_head_losses(loss.item(), pl/num_unroll_steps, vl/num_unroll_steps, rl/num_unroll_steps, 0)
     
     batch_counter.increment()
 

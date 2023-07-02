@@ -1,7 +1,3 @@
-from torch.utils.tensorboard import SummaryWriter
-
-tensor_logger = SummaryWriter()
-
 class Counter:
     def __init__(self):
         self.count = 0

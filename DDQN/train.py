@@ -1,99 +1,105 @@
 import slider
-import policy
+#import simple_slider
 import time
 import torch
+from graphics import *
 import memory
 import random
 import math
 import torch.nn.functional as F
 import nstep
+import globals
+import numpy as np
+import agent
+from transition import *
+from logger import *
 
-agent = policy.policy()
 
-lagged_agent = policy.policy()
-lagged_agent.copy_weights(agent)
+# game = simple_slider.Game
+game = slider.Game
 
-replay_memory_size = 100000
-replay_memory = memory.ReplayMemory(replay_memory_size)
+replay_memory = memory.ReplayMemory(globals.replay_memory_size)
 
 # export OMP_NUM_THREADS=1
-def live(iterations, batch_size, lagg, eps, improve_flag, num_steps):
-    n_step = nstep.Nstep(num_steps)
-    g = slider.Game()
+
+
+agent = agent.Agent(game.state_space_size, game.action_space_size)
+logger = Logger()
+
+
+def live(iterations, improve_flag):
+    n_step = nstep.Nstep()
+    g = game()
     state = g.get_state()
-    total_reward = 0
+    total_episode_reward = 0
     start = time.time()
     for i in range(iterations):
 
         # eps-greedy
-        if random.uniform(0,1) < eps:
-            action = random.randint(0,3)
+        if random.uniform(0, 1) < globals.epsilon:
+            action = random.randint(0, game.action_space_size-1)
         else:
             action = agent.get_action(state)
-            
-        reward,next_state = g.step(action)
-        
-        n_step.push(state,action,reward)
-        
+
+        reward, next_state = g.step(action)
+
+        n_step.push(state, action, reward)
+
         state = next_state
-        
-        if i >= num_steps:
+
+        if i > globals.nsteps:
             nstate, naction, nnext_state, nreward = n_step.get()
-            replay_memory.push(nstate, naction, nnext_state, nreward)
-            
-        if improve_flag:
-            improve(batch_size, num_steps)
+            replay_memory.push(
+                Transition(nstate, naction, nnext_state, nreward)
+            )
 
-        if i % lagg == 0:
-            lagged_agent.copy_weights(agent)
+        if len(replay_memory) > 100 and improve_flag:
+            for _ in range(globals.updates_per_step):
+                agent.improve(replay_memory.sample(globals.batch_size))
 
-        total_reward += reward
+            if i != 0 and i % globals.target_update_freq == 0:
+                agent.update_target()
+
+        total_episode_reward += reward
+
+    logger.add_reward(total_episode_reward)
+    print(f'avg_running_reward: {logger.get_running_avg_reward()}, total_episode_reward: {total_episode_reward}')
 
     end = time.time()
     print("Elapsed time: ", end-start)
-    print(total_reward)
 
-def init_memory(iters=replay_memory_size, eps=1, num_steps=3):
-    live(iters, 32, 999999, eps, False, num_steps)
-    
-def live_loop(lives, iterations, batch_size, lagg, eps, num_steps=3):
+
+def live_loop(lives, iterations, should_reset):
     for i in range(lives):
         print(f'Iteration: {i} of {lives}')
-        live(iterations, batch_size, lagg, eps, True, num_steps)
+        live(iterations, True)
 
-def improve(batch_size, num_steps):
-    batch = replay_memory.sample(batch_size)
-    
-    states = torch.FloatTensor([t.state for t in batch])
-    actions = torch.LongTensor([t.action for t in batch])
-    next_states = torch.FloatTensor([t.next_state for t in batch])
-    rewards = torch.FloatTensor([t.reward for t in batch])
+        if should_reset and i != 0 and i % globals.reset_freq == 0:
+            print("Resetting models")
+            start = time.time()
+            agent.reset(replay_memory)
+            end = time.time()
+            print("Resetting complete. Elapsed time: ", end-start)
 
-    believed_qvs = agent.forward(states).gather(1,actions.view(-1,1))
 
-    # double dqn
+def agent_loop(iterations, cd=0.01):
+    win = GraphWin("canvas", globals.width, globals.height)
+    win.setBackground('lightskyblue')
     with torch.no_grad():
-        next_actions = agent.forward(next_states).max(1)[1].view(-1,1)
-        next_qvs = lagged_agent.forward(next_states).gather(1, next_actions)
-        target_v = rewards.view(-1,1) + math.pow(0.99,num_steps)*next_qvs;
-
-    loss = F.smooth_l1_loss(believed_qvs, target_v)
-
-    agent.opt.zero_grad()
-    loss.backward()
-    for param in agent.parameters():
-        param.grad.data.clamp_(-1,1)
-    agent.opt.step()
-
-def agent_loop(iterations, cd):
-    with torch.no_grad():
-        g = slider.Game()
-        g.render(0,0,0,0)
+        g = game()
+        g.render(0, 0, 0, 0, win)
         for i in range(iterations):
             state = g.get_state()
-            vs = agent.forward(torch.from_numpy(state).view(1,8).float())
-            action = torch.max(vs,1)[1].data[0]
-            _,_ = g.step(action)        
-            g.render(round(vs.data[0][0].item(), 2), round(vs.data[0][1].item(), 2), round(vs.data[0][2].item(), 2), round(vs.data[0][3].item(), 2))
-            #g.render(0,0,0,0)
+            vs = agent.get_values(state)
+            action = torch.max(vs, 1)[1].data[0]
+            _, _ = g.step(action)
+            g.render(
+                round(vs.data[0][0].item(), 2),
+                round(vs.data[0][1].item(), 2),
+                round(vs.data[0][2].item(), 2),
+                round(vs.data[0][3].item(), 2),
+                win
+            )
+            # g.render(0,0,0,0)
             time.sleep(cd)
+    win.close()

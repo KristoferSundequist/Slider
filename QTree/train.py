@@ -13,7 +13,7 @@ replay_memory_size = 100000
 replay_memory = memory.ReplayMemory(replay_memory_size)
 
 # export OMP_NUM_THREADS=1
-def live(iterations, lagg, eps, improve_flag):
+def live(iterations, lagg, eps, improve_flag, lagg2):
     n_step = nstep.Nstep(globals.num_steps)
     g = slider.Game()
     state = g.get_state()
@@ -38,7 +38,10 @@ def live(iterations, lagg, eps, improve_flag):
             replay_memory.push(n_step.get())
 
         if i % lagg == 0 and improve_flag:
-            agent.update(replay_memory.get_memories())
+            agent.update(replay_memory.get_memories(), False)
+        
+        if i % lagg2 == 0 and improve_flag:
+            agent.update(replay_memory.get_memories(), True)
 
         total_reward += reward
 
@@ -47,15 +50,15 @@ def live(iterations, lagg, eps, improve_flag):
     print(total_reward)
 
 def init_memory(iters=replay_memory_size, eps=1):
-    live(iters, 9999, eps, False)
+    live(iters, 9999, eps, False, 9999)
     print("Memory initiated")
     agent.init_agent(replay_memory.get_memories())
     print("Memory fitted")
     
-def live_loop(lives, iterations, lagg, eps):
+def live_loop(lives, iterations, lagg, eps, lagg2):
     for i in range(lives):
         print(f'Iteration: {i} of {lives}')
-        live(iterations, lagg, eps, True)
+        live(iterations, lagg, eps, True, lagg2)
 
 def agent_loop(iterations, cd):
     g = slider.Game()

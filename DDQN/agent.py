@@ -16,28 +16,26 @@ class Agent:
         self.state_space_size = state_space_size
         self.action_space_size = action_space_size
 
-        self.sub_agent = Sub_Agent(state_space_size, action_space_size)
-        self.sub_agent2 = Sub_Agent(state_space_size, action_space_size)
+        self.agents = [Sub_Agent(state_space_size, action_space_size)
+                       for _ in range(globals.num_agents)]
 
     def reset(self, replay_buffer: memory.ReplayMemory):
-        self.sub_agent.reset()
-        self.sub_agent2.reset()
+        for agent in self.agents:
+            agent.reset()
 
         for i in range(globals.reset_retrain_iters):
             self.improve(replay_buffer.sample(globals.batch_size))
             if i % 2000 == 0:
-                self.sub_agent.update_target()
-                self.sub_agent2.update_target()
+                for agent in self.agents:
+                    agent.update_target()
 
     def get_action(self, state: np.ndarray) -> int:
-        agent_to_do_action = random.choice([0, 1])
-        if agent_to_do_action == 0:
-            return self.sub_agent.get_action(state)
-        else:
-            return self.sub_agent2.get_action(state)
+        agent_to_do_action = random.choice([0, globals.num_agents-1])
+        return self.agents[agent_to_do_action].get_action(state)
 
     def get_values(self, state: np.ndarray) -> torch.tensor:
-        return self.sub_agent.get_values(state)
+        agent_to_do_action = random.choice([0, globals.num_agents-1])
+        return self.agents[agent_to_do_action].get_values(state)
 
     def improve(self, batch: List[Transition]):
         states = torch.FloatTensor(
@@ -49,33 +47,29 @@ class Agent:
         rewards = torch.FloatTensor(
             [t.reward for t in batch]).to(globals.device)
 
-        believed_qvs = self.sub_agent.forward(
-            states).gather(1, actions.view(-1, 1))
-        believed_qvs2 = self.sub_agent2.forward(
-            states).gather(1, actions.view(-1, 1))
+        believed_qvs = [agent.forward(states).gather(
+            1, actions.view(-1, 1)) for agent in self.agents]
 
         # double dqn
         with torch.no_grad():
-            next_all_qvs = self.sub_agent.forward(next_states)
+            next_all_qvs = [agent.forward(next_states)
+                            for agent in self.agents]
 
-            next_actions = next_all_qvs.max(1)[1].view(-1, 1)
+            next_actions = next_all_qvs[0].max(1)[1].view(-1, 1)
 
-            next_qvs1 = next_all_qvs.gather(1, next_actions)
-            next_qvs2 = self.sub_agent2.forward(
-                next_states).gather(1, next_actions)
+            heighest_qvs = torch.stack(
+                [qvs.gather(1, next_actions) for qvs in next_all_qvs])
 
-            next_qvs = torch.minimum(next_qvs1, next_qvs2)
+            min_next_qvs = heighest_qvs.min(0)[0]
 
-            assert (next_qvs.size() == next_qvs1.size())
+            assert (min_next_qvs.size() == heighest_qvs[0].size())
             target_v = rewards.view(-1, 1) + \
-                math.pow(globals.discount_factor, globals.nsteps)*next_qvs
+                math.pow(globals.discount_factor, globals.nsteps)*min_next_qvs
 
-        loss = F.mse_loss(believed_qvs, target_v)
-        loss2 = F.mse_loss(believed_qvs2, target_v)
-
-        self.sub_agent.opt_step(loss)
-        self.sub_agent2.opt_step(loss2)
+        for i in range(0, globals.num_agents):
+            loss = F.mse_loss(believed_qvs[i], target_v)
+            self.agents[i].opt_step(loss)
 
     def update_target(self):
-        self.sub_agent.update_target()
-        self.sub_agent2.update_target()
+        for agent in self.agents:
+            agent.update_target()

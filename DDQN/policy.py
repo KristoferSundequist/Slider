@@ -28,7 +28,7 @@ class Policy(nn.Module):
         self.advantages = nn.Linear(self.hidden_size, action_space_size)
 
         self.apply(self.weight_init)
-        self.opt = optim.Adam(self.parameters(), lr=globals.learning_rate)
+        self.opt = optim.AdamW(self.parameters(), lr=globals.learning_rate, weight_decay=0.1)
 
     def copy_weights(self, other):
         self.load_state_dict(copy.deepcopy(other.state_dict()))

@@ -34,7 +34,7 @@ def get_episode(
         initial_states.pop(0)
         initial_states.append(state)
 
-        root = MCTS(initial_states, representation, dynamics, prediction, game.action_space_size, 20, discount)
+        root = MCTS(initial_states, representation, dynamics, prediction, game.action_space_size, 50, discount)
 
         action = sample_action(root, temperature)
         reward, _ = game.step(action)

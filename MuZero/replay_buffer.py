@@ -6,7 +6,7 @@ from episode import *
 class Replay_buffer:
     def __init__(self, buffer_size: int):
         self.buffer_size = buffer_size
-        self.replay_buffer = []
+        self.replay_buffer: List[Episode] = []
 
     def sample_batch(self, batch_size: int, num_initial_states: int, num_unroll_steps: int):
         inds = [np.random.randint(len(self.replay_buffer)) for _ in range(batch_size)]

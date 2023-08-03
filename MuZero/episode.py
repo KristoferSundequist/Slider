@@ -33,7 +33,7 @@ class Episode:
 
     def calc_targets_gae(self, discount: float, lambd: float = 0.95):
         values = self._search_values.copy()
-        values.append(0)
+        values.append(self._search_values[-1])
 
         targets = [0.0 for _ in range(len(self._rewards))]
 

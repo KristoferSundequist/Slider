@@ -9,8 +9,8 @@ from slider import *
 from torch.utils.data.sampler import BatchSampler, SubsetRandomSampler
 
 ncpus = cpu_count()
-width = 1500
-height = 1000
+width = 800
+height = 700
 agent = policy.policy(Game.state_space_size, Game.action_space_size)
 optimizer = torch.optim.Adam(agent.parameters(), lr=3e-4, eps=1e-5)
 

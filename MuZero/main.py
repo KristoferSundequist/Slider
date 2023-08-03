@@ -59,7 +59,7 @@ simpredictor = Projector(inner_size)
 simpredictor_optimizer = torch.optim.AdamW(
     simpredictor.parameters(), lr=3e-4, weight_decay=1e-4)
 
-replay_buffer = Replay_buffer(100)
+replay_buffer = Replay_buffer(6*10)
 #replay_buffer = load_from_file('trajectories/trajs20230628')
 
 def save(name):

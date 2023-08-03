@@ -98,6 +98,7 @@ class Enemy:
         self.x = np.random.randint(globals.width)
         self.y = np.random.randint(globals.height)
         self.radius = radius
+        self.speed = 3
 
     def reset(self):
         self.x = np.random.randint(globals.width)
@@ -111,14 +112,14 @@ class Enemy:
 
     def update(self, sliderx, slidery):
         if self.x > sliderx:
-            self.x -= 1
+            self.x -= self.speed
         else:
-            self.x += 1
+            self.x += self.speed
 
         if self.y > slidery:
-            self.y -= 1
+            self.y -= self.speed
         else:
-            self.y += 1
+            self.y += self.speed
 
 
 class Game():

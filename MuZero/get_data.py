@@ -4,6 +4,8 @@ import torch
 import time
 import copy
 from multiprocessing import Pool, cpu_count
+import random
+import scipy
 
 import slider
 from policy import *
@@ -14,15 +16,17 @@ ncpus = cpu_count()
 
 
 def get_episode(
-        num_initial_states: int,
-        max_iters: int,
-        representation: Representation,
-        dynamics: Dynamics,
-        prediction: Prediction,
-        temperature: float,
-        game,
-        discount: float):
+    num_initial_states: int,
+    max_iters: int,
+    representation: Representation,
+    dynamics: Dynamics,
+    prediction: Prediction,
+    temperature: float,
+    game,
+    discount: float
+):
 
+    scipy.random.seed()
     episode = Episode(game.state_space_size)
 
     initial_states = [np.zeros(game.state_space_size)
@@ -34,36 +38,42 @@ def get_episode(
         initial_states.pop(0)
         initial_states.append(state)
 
-        root = MCTS(initial_states, representation, dynamics, prediction, game.action_space_size, 50, discount)
+        root = MCTS(initial_states, representation, dynamics,
+                    prediction, game.action_space_size, 100, discount)
 
         action = sample_action(root, temperature)
         reward, _ = game.step(action)
 
-        episode.add_transition(reward, action, state, root.get_search_policy(), root.search_value())
+        episode.add_transition(reward, action, state,
+                               root.get_search_policy(), root.search_value())
 
     episode.calc_targets_gae(discount)
     return episode
 
 
 def get_episodes(
-        n_episodes: int,
-        num_initial_states: int,
-        max_iters: int,
-        representation: Representation,
-        dynamics: Dynamics,
-        prediction: Prediction,
-        temperature: float,
-        gameFactory,
-        discount):
+    n_episodes: int,
+    num_initial_states: int,
+    max_iters: int,
+    representation: Representation,
+    dynamics: Dynamics,
+    prediction: Prediction,
+    temperature: float,
+    gameFactory,
+    discount
+):
 
     torch.set_num_threads(1)
-    pool = Pool(ncpus)
 
-    episodes = pool.starmap(get_episode,
-                            [(num_initial_states, max_iters, representation, dynamics, prediction, temperature, gameFactory(), discount) for _ in range(n_episodes)])
+    with Pool(ncpus) as pool:
+        episodes = pool.starmap(
+            get_episode,
+            [(num_initial_states, max_iters, representation, dynamics, prediction,
+              temperature, gameFactory(), discount) for _ in range(n_episodes)]
+        )
 
     torch.set_num_threads(ncpus)
-    
+
     return episodes
 
 
@@ -81,12 +91,14 @@ def test_get_episode():
     state_space_size = game.state_space_size
     inner_size = 30
     action_space_size = game.action_space_size
-    representation = Representation(num_initial_states, state_space_size, inner_size)
+    representation = Representation(
+        num_initial_states, state_space_size, inner_size)
     dynamics = Dynamics(inner_size, action_space_size)
     prediction = Prediction(inner_size, action_space_size)
 
     num_iterations = 30
-    e = get_episode(num_initial_states, num_iterations, representation, dynamics, prediction, 1, game, 0.99)
+    e = get_episode(num_initial_states, num_iterations,
+                    representation, dynamics, prediction, 1, game, 0.99)
 
     assert len(e._states) == num_iterations
 
@@ -105,7 +117,8 @@ def test_get_episodeS():
     state_space_size = game.state_space_size
     inner_size = 30
     action_space_size = game.action_space_size
-    representation = Representation(num_initial_states, state_space_size, inner_size)
+    representation = Representation(
+        num_initial_states, state_space_size, inner_size)
     dynamics = Dynamics(inner_size, action_space_size)
     prediction = Prediction(inner_size, action_space_size)
 
@@ -117,4 +130,5 @@ def test_get_episodeS():
     assert len(episodes) == num_episodes
     assert episodes[0].get_num_transitions() == num_iterations
 
-    assert not np.array_equal(episodes[0]._states[0], episodes[1]._states[0])  # make sure not same data in diff episodes
+    # make sure not same data in diff episodes
+    assert not np.array_equal(episodes[0]._states[0], episodes[1]._states[0])

@@ -32,8 +32,7 @@ class Representation(nn.Module):
 
         self.w1 = nn.Linear(num_states * state_space_size, 256)
         self.w2 = nn.Linear(256, 256)
-        self.w3 = nn.Linear(256, 256)
-        self.w4 = nn.Linear(256, inner_size)
+        self.w3 = nn.Linear(256, inner_size)
 
     def prepare_states(self, initial_states):
         return torch.Tensor(np.reshape(np.array(initial_states), [-1, self.num_states*self.state_space_size]))
@@ -41,8 +40,7 @@ class Representation(nn.Module):
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         x = F.relu(self.w1(input))
         x = F.relu(self.w2(x))
-        x = F.relu(self.w3(x))
-        out = torch.tanh(self.w4(x))
+        out = torch.tanh(self.w3(x))
         return out
 
 

@@ -140,7 +140,7 @@ class Enemy:
 class Game:
     # state_space_size = 6
     state_space_size = 8
-    action_space_size = 4
+    action_space_size = 5
     
     def __init__(self, width, height):
         self.s = Slider(width, height)

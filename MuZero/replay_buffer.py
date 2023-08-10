@@ -1,6 +1,7 @@
 import numpy as np
 import random
 from episode import *
+from typing import *
 
 
 class Replay_buffer:
@@ -8,9 +9,9 @@ class Replay_buffer:
         self.buffer_size = buffer_size
         self.replay_buffer: List[Episode] = []
 
-    def sample_batch(self, batch_size: int, num_initial_states: int, num_unroll_steps: int):
-        inds = [np.random.randint(len(self.replay_buffer)) for _ in range(batch_size)]
-        batch = [self.replay_buffer[i].sample(num_initial_states, num_unroll_steps) for i in inds]
+    def sample_batch(self, batch_size: int, num_initial_states: int, num_unroll_steps: int) -> List[TrainingExample]:
+        episode_indices = [np.random.randint(len(self.replay_buffer)) for _ in range(batch_size)]
+        batch = [self.replay_buffer[i].sample(num_initial_states, num_unroll_steps) for i in episode_indices]
         return batch
     
     def sample_episodes(self, n_episodes: int) -> ([int], [Episode]):
@@ -25,6 +26,9 @@ class Replay_buffer:
 
     def replace_episode(self, i: int, e: Episode):
         self.replay_buffer[i] = e
+    
+    def is_empty(self) -> bool:
+        return len(self.replay_buffer) == 0
 
 '''
 
@@ -61,12 +65,11 @@ def test_sample_batch():
         e = Episode(3)
         for i in range(100):
             e.add_transition(0, i, np.array([i, i, i]), [0.1, 0.2, 0.3, 0.4], 0)
-        e.calc_targets(.99)
+        e.calculate_value_targets(.99)
         rb.add_episode(e)
     
     batch = rb.sample_batch(32, 7, 5)
     assert len(batch) == 32
     
-    (initial_states, targets) = batch[0]
-    assert len(initial_states) == 7 + 5
-    assert len(targets) == 5
+    assert len(batch[0].initialStates) == 7
+    assert len(batch[0].targetValues) == 5

@@ -3,6 +3,7 @@ import torch
 
 from util import *
 
+
 class Node:
     def __init__(self, inner_state: torch.Tensor, action_space_size: int,
                  policy: np.ndarray):
@@ -42,7 +43,8 @@ class Node:
     def get_search_policy(self, temperature=1) -> [float]:
         temperature = 1/temperature
         total_visits = sum(map(lambda v: v**temperature, self.visit_counts))
-        probs = list(map(lambda k: (k**temperature)/total_visits, self.visit_counts))
+        probs = list(map(lambda k: (k**temperature) /
+                     total_visits, self.visit_counts))
         return probs
 
     def search_value(self) -> float:
@@ -52,10 +54,10 @@ class Node:
     def expand(self, a: int, r: float, node):
         self.rewards[a] = r
         self.edges[a] = node
-    
+
     def update(self, value: float, action: int):
-        self.mean_values[action] = (self.visit_counts[action] * self.mean_values[action] +
-                                    value) / (self.visit_counts[action] + 1)
+        self.mean_values[action] = (
+            self.visit_counts[action] * self.mean_values[action] + value) / (self.visit_counts[action] + 1)
         self.visit_counts[action] += 1
 
 
@@ -67,21 +69,21 @@ class Node:
 def test_ucb_one_visit_yields_highest_policy():
     n = Node(None, 4, np.array([0.2, 0.3, 0.4, 0.1]))
     n.visit_counts = [1, 0, 0, 0]
-    a = n.get_action(Normalizer(0,1))
+    a = n.get_action(Normalizer(0, 1))
     assert a == 2
 
 
 def test_ucb_equal_visits_yields_highest_policy():
     n = Node(None, 4, np.array([0.2, 0.3, 0.4, 0.1]))
     n.visit_counts = [30, 30, 30, 30]
-    a = n.get_action(Normalizer(0,1))
+    a = n.get_action(Normalizer(0, 1))
     assert a == 2
 
 
 def test_highest_policy_visited_alot_yields_other_action():
     n = Node(None, 4, np.array([0.2, 0.3, 0.4, 0.1]))
     n.visit_counts = [20, 20, 200, 20]
-    a = n.get_action(Normalizer(0,1))
+    a = n.get_action(Normalizer(0, 1))
     assert a == 1
 
 
@@ -89,21 +91,23 @@ def test_low_policy_action_getting_choosen_when_high_value():
     n = Node(None, 4, np.array([0.2, 0.3, 0.4, 0.1]))
     n.visit_counts = [20, 20, 20, 20]
     n.mean_values = [0.1, 0.2, 0.1, 1]
-    a = n.get_action(Normalizer(0,1))
+    a = n.get_action(Normalizer(0, 1))
     assert a == 3
+
 
 def test_low_policy_action_getting_choosen_when_low_high_value():
     n = Node(None, 4, np.array([0.2, 0.3, 0.4, 0.1]))
     n.visit_counts = [20, 20, 20, 20]
     n.mean_values = [0.01, 0.02, 0.08, 0.1]
-    a = n.get_action(Normalizer(0,0.1))
+    a = n.get_action(Normalizer(0, 0.1))
     assert a == 3
+
 
 def test_super_low_prob_dont_crash():
     n = Node(None, 4, np.array([1.0e-50, 0.3, 0.4, 0.2]))
     n.visit_counts = [1, 0, 0, 0]
     n.mean_values = [10, 2, 2, 2]
-    a = n.get_action(Normalizer(0,1))
+    a = n.get_action(Normalizer(0, 1))
     assert a == 0
 
 
@@ -172,7 +176,7 @@ def test_get_value():
     n.visit_counts = np.array([1, 1, 3, 5])
     assert n.search_value() == sum([0.23*0.1, 0.1*0.1, 0.54*0.3, 0.9*0.5])
 
-    
+
 '''
 
 TEST SEARCH POLICY
@@ -186,19 +190,20 @@ def test_get_search_policy():
     assert n.get_search_policy() == [.1, .1, .3, .5]
 
 
-
 '''
 
     TEST GET MEAN REWARDS
 
 '''
 
+
 def test_get_mean_rewards():
     n = Node(None, 4, np.array([1.0e-50, 0.3, 0.4, 0.2]))
-    n.rewards = [1,None, 2, 3.3]
+    n.rewards = [1, None, 2, 3.3]
     assert n.get_mean_reward() == 2.1
+
 
 def test_get_mean_rewards_all_None():
     n = Node(None, 4, np.array([1.0e-50, 0.3, 0.4, 0.2]))
-    n.rewards = [None,None, None, None]
+    n.rewards = [None, None, None, None]
     assert n.get_mean_reward() == None

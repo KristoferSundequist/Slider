@@ -2,6 +2,21 @@ import typing
 import numpy as np
 import random
 from typing import *
+from dataclasses import dataclass
+
+
+@dataclass
+class TargetValues:
+    value: float
+    reward: float
+    action: int
+    search_policy: List[float]
+
+
+@dataclass
+class TrainingExample:
+    initialStates: List[np.ndarray]
+    targetValues: List[TargetValues]
 
 
 class Episode:
@@ -31,77 +46,68 @@ class Episode:
         self._search_policies.append(search_policy)
         self._search_values.append(search_value)
 
-    def calc_targets_gae(self, discount: float, lambd: float = 0.95):
-        values = self._search_values.copy()
-        values.append(self._search_values[-1])
-
-        targets = [0.0 for _ in range(len(self._rewards))]
-
-        gae = 0
-        for i in reversed(range(len(self._rewards))):
-            delta = self._rewards[i] + discount*values[i+1] - values[i]
-            gae = delta + discount*lambd*gae
-            targets[i] = values[i] + gae
-
-        self._value_targets = targets
-
-    def calc_targets(self, discount: float):
-        self._value_targets = [0.0 for _ in range(len(self._rewards))]
-        R = 0
-        for i in reversed(range(len(self._rewards))):
-            R = self._rewards[i] + discount*R
-            self._value_targets[i] = R
-
-    # returns [(value, reward, action, search_policy, isNotDone)]
-
-    def _make_targets(self, state_index: int, num_unroll_steps: int) \
-            -> [(float, float, int, List[float], bool)]:
-        targets = []
-        action_space_size = len(self._search_policies[0])
-        for current_index in range(state_index, state_index + num_unroll_steps):
+    def _make_targets(self, start_index: int, num_unroll_steps: int) -> List[TargetValues]:
+        assert start_index + num_unroll_steps < len(
+            self._states), 'start index + num_unrollsteps needs to be smaller than episode length'
+        targets: List[TargetValues] = []
+        for i in range(num_unroll_steps):
+            current_index = start_index + i
             if current_index < len(self._states):
-                targets.append((self._value_targets[current_index], self._rewards[current_index], self._actions[current_index],
-                                self._search_policies[current_index], True))
+                targetValues = TargetValues(
+                    value=self._value_targets[current_index],
+                    reward=self._rewards[current_index],
+                    action=self._actions[current_index],
+                    search_policy=self._search_policies[current_index]
+                )
+                targets.append(targetValues)
             else:
-                targets.append((0, 0, np.random.randint(action_space_size),
-                                [1.0/action_space_size for _ in range(action_space_size)], False))
+                assert False, 'this should not happen'
 
         return targets
 
-    # OLD WORKING VERSION
-    def gather_initial_state_old(self, state_index: int, num_initial_states: int) -> List[np.ndarray]:
+    def calculate_value_targets(self, discount_factor: float):
+        targets = [0.0 for _ in range(len(self._rewards))]
+        targets[-1] = self._search_values[-1]
+
+        for i in reversed(range(len(self._rewards)-1)):
+            targets[i] = self._rewards[i] + discount_factor * targets[i+1]
+        
+        self._value_targets = targets
+
+    def _make_value_targets(self, start_index: int, num_unroll_steps: int, discount_factor: float) -> List[float]:
+        assert start_index + num_unroll_steps < len(
+            self._states), 'start index + num_unrollsteps needs to be smaller than episode length'
+        value_targets = [0 for _ in range(num_unroll_steps)]
+        value_targets[-1] = self._search_values[start_index +
+                                                num_unroll_steps - 1]
+
+        for i in reversed(range(num_unroll_steps-1)):
+            value_targets[i] = self._rewards[start_index + i] + \
+                discount_factor * value_targets[i + 1]
+
+        return value_targets
+
+    def gather_initial_state(self, start_index: int, num_initial_states: int) -> List[np.ndarray]:
         initial_states = [np.zeros(self._state_space_size)
                           for i in range(num_initial_states)]
 
-        prev_index = max(0, state_index - num_initial_states)
-        for i in range(prev_index+1, state_index+1):
+        prev_index = max(0, start_index - num_initial_states)
+        for i in range(prev_index+1, start_index+1):
             initial_states.pop(0)
             initial_states.append(self._states[i])
 
         return initial_states
 
-    def gather_initial_state(self, state_index: int, num_initial_states: int, num_unroll_steps: int) -> List[np.ndarray]:
-        initial_states = []
+    def sample(self, num_initial_states: int, num_unroll_steps: int) -> TrainingExample:
 
-        start_index = state_index - num_initial_states + 1
-        end_index = state_index + 1 + num_unroll_steps
+        start_index = np.random.randint(len(self._states) - num_unroll_steps)
+        assert start_index >= 0
+        initial_states = self.gather_initial_state(
+            start_index, num_initial_states)
+        targets = self._make_targets(
+            start_index, num_unroll_steps)
 
-        for i in range(start_index, end_index):
-            if i >= 0:
-                initial_states.append(self._states[i])
-            else:
-                initial_states.append(np.zeros(self._state_space_size))
-
-        return initial_states
-
-    def sample(self, num_initial_states: int, num_unroll_steps: int) \
-            -> (List[np.ndarray], [(float, float, int, List[float], bool)]):
-
-        state_index = np.random.randint(len(self._states)-num_unroll_steps)
-        initial_states = self.gather_initial_state(state_index, num_initial_states, num_unroll_steps)
-        targets = self._make_targets(state_index, num_unroll_steps)
-
-        return (initial_states, targets)
+        return TrainingExample(initialStates=initial_states, targetValues=targets)
 
 
 '''
@@ -117,10 +123,11 @@ def testgather_initial_state():
     for i in range(100):
         e.add_transition(0, 2, np.array([i, i, i]), [0.1, 0.2, 0.3, 0.4], 0)
 
-    initial_states = e.gather_initial_state(10, 4, 3)
+    initial_states = e.gather_initial_state(10, 4)
 
+    assert len(initial_states) == 4
     assert np.array_equal(initial_states, [np.array(
-        [i, i, i]) for i in [7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0]])
+        [i, i, i]) for i in [7.0, 8.0, 9.0, 10.0]])
 
 
 def testgather_initial_state_with_zero_pad_for_start():
@@ -129,10 +136,13 @@ def testgather_initial_state_with_zero_pad_for_start():
     for i in range(100):
         e.add_transition(0, 2, np.array([i, i, i]), [0.1, 0.2, 0.3, 0.4], 0)
 
-    initial_states = e.gather_initial_state(4, 10, 5)
+    initial_states = e.gather_initial_state(4, 10)
 
-    assert np.array_equal(initial_states, [np.array([i, i, i])
-                                           for i in [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]])
+    assert np.array_equal(
+        initial_states,
+        [np.array([i, i, i])
+         for i in [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0]]
+    )
 
 
 '''
@@ -151,13 +161,53 @@ def test_sample():
     for i in range(25):
         e.add_transition(0, 2, np.array([i, i, i]), [0.1, 0.2, 0.3, 0.4], 0)
 
-    e.calc_targets_gae(.99)
+    e.calculate_value_targets(discount_factor=.99)
     # targets[i] : (value, reward, action, search_policy, isNotDone)
-    (initial, targets) = e.sample(num_initial_states, num_unroll_steps)
+    trainingExample = e.sample(num_initial_states, num_unroll_steps)
 
-    assert len(initial) == (num_initial_states + num_unroll_steps)
-    assert len(targets) == num_unroll_steps
-    assert targets[0][2] == 2
+    print(len(trainingExample.initialStates))
+    assert len(trainingExample.initialStates) == num_initial_states
+    assert len(trainingExample.targetValues) == num_unroll_steps
+    assert trainingExample.targetValues[0].action == 2
+
+
+'''
+
+    TEST _make_value_targets
+
+'''
+
+
+def test_make_value_targets():
+    e = Episode(3)
+
+    for i in range(100):
+        if i == 50:
+            e.add_transition(0, 2, np.array([i, i, i]), [i, 0.2, 0.3, 0.4], 0)
+        elif i == 51:
+            e.add_transition(0, 2, np.array([i, i, i]), [i, 0.2, 0.3, 0.4], 0)
+        elif i == 52:
+            e.add_transition(1, 2, np.array([i, i, i]), [i, 0.2, 0.3, 0.4], 0)
+        elif i == 53:
+            e.add_transition(0, 2, np.array([i, i, i]), [i, 0.2, 0.3, 0.4], 0)
+        elif i == 54:
+            e.add_transition(0, 2, np.array([i, i, i]), [i, 0.2, 0.3, 0.4], 5)
+        elif i == 55:
+            e.add_transition(0, 2, np.array([i, i, i]), [i, 0.2, 0.3, 0.4], 0)
+        elif i == 56:
+            e.add_transition(1, 2, np.array([i, i, i]), [i, 0.2, 0.3, 0.4], 0)
+        elif i == 57:
+            e.add_transition(1, 2, np.array([i, i, i]), [i, 0.2, 0.3, 0.4], 0)
+        else:
+            e.add_transition(0, 2, np.array([i, i, i]), [i, 0.2, 0.3, 0.4], 0)
+
+    # tagets == [(value, reward, action, search_policy, isNotDone)]
+    value_targets = e._make_value_targets(50, 5, 0.99)  # check out of bound
+
+    assert len(value_targets) == 5  # correct num transitions
+    assert value_targets[4] == 5
+    assert value_targets[3] == 5*0.99
+    assert value_targets[2] == 5*0.99*0.99 + 1
 
 
 '''
@@ -170,7 +220,7 @@ def test_sample():
 def test_make_targets():
     e = Episode(3)
 
-    for i in range(100):
+    for i in range(110):
         if i == 50:
             e.add_transition(1, 2, np.array([i, i, i]), [i, 0.2, 0.3, 0.4], 0)
         elif i == 55:
@@ -185,67 +235,14 @@ def test_make_targets():
         else:
             e.add_transition(0, 2, np.array([i, i, i]), [i, 0.2, 0.3, 0.4], 0)
 
-    e.calc_targets(.99)
-
+    e.calculate_value_targets(.99)
     # tagets == [(value, reward, action, search_policy, isNotDone)]
-    targets = e._make_targets(85, 20)  # check out of bound
+    targets = e._make_targets(90, 10)  # check out of bound
     for t in targets:
         print(t)
-    assert len(targets) == 20  # correct num transitions
-    assert targets[11][2] == 3  # correct action
-    assert all([not targets[i][4]
-               for i in range(15, 20)])  # end states are donestates
-    assert targets[14][0] == 1  # correct value
-    assert targets[13][0] == 1*0.99  # correct value w discount
-    assert targets[12][0] == 1*0.99**2  # correct value w discount
-
-    assert targets[13][1] == 0  # correct rewards
-    assert targets[14][1] == 1  # correct rewards
-    assert all([np.array_equal(targets[i][3], [85 + i, 0.2, 0.3, 0.4])
-               for i in range(15)])
-
-
-def test_make_targets_gae():
-    e = Episode(3)
-
-    for i in range(100):
-        if i == 50:
-            e.add_transition(1, 2, np.array([i, i, i]), [i, 0.2, 0.3, 0.4], 0)
-        elif i == 55:
-            e.add_transition(0, 2, np.array([i, i, i]), [
-                             i, 0.2, 0.3, 0.4], 0.5)
-        elif i == 96:
-            e.add_transition(0, 3, np.array([i, i, i]), [i, 0.2, 0.3, 0.4], 1)
-        elif i == 97:
-            e.add_transition(0, 2, np.array([i, i, i]), [i, 0.2, 0.3, 0.4], 1)
-        elif i == 98:
-            e.add_transition(0, 2, np.array([i, i, i]), [
-                             i, 0.2, 0.3, 0.4], 0.5)
-        elif i == 99:
-            e.add_transition(1, 2, np.array([i, i, i]), [i, 0.2, 0.3, 0.4], 1)
-        else:
-            e.add_transition(0, 2, np.array([i, i, i]), [i, 0.2, 0.3, 0.4], 0)
-
-    discount = .99
-    lambd = .95
-    e.calc_targets_gae(discount, lambd)
-
-    # tagets == [(value, reward, action, search_policy, isNotDone)]
-    targets = e._make_targets(85, 20)  # check out of bound
-    for t in targets:
-        print(t)
-    assert len(targets) == 20  # correct num transitions
-    assert targets[11][2] == 3  # correct action
-    assert all([not targets[i][4]
-               for i in range(15, 20)])  # end states are donestates
-    gae99 = (1 + discount*0 - 1)
-    assert targets[14][0] == 1 + gae99
-    gae98 = (0 + discount*1 - 0.5) + discount*lambd*gae99
-    assert targets[13][0] == 0.5 + gae98
-    gae97 = (0 + discount*0.5 - 1) + discount*lambd*gae98
-    assert targets[12][0] == 1 + gae97
-
-    assert targets[13][1] == 0  # correct rewards
-    assert targets[14][1] == 1  # correct rewards
-    assert all([np.array_equal(targets[i][3], [85 + i, 0.2, 0.3, 0.4])
-               for i in range(15)])
+    assert len(targets) == 10  # correct num transitions3
+    assert targets[5].action == 2  # correct action
+    assert targets[6].action == 3  # correct action
+    assert targets[7].action == 2  # correct action
+    assert all([np.array_equal(targets[i].search_policy, [90 + i, 0.2, 0.3, 0.4])
+               for i in range(10)])

@@ -14,7 +14,6 @@ from episode import *
 
 ncpus = cpu_count()
 
-
 def get_episode(
     num_initial_states: int,
     max_iters: int,
@@ -23,7 +22,8 @@ def get_episode(
     prediction: Prediction,
     temperature: float,
     game,
-    discount: float
+    discount: float,
+    num_simulations: int
 ):
 
     scipy.random.seed()
@@ -39,7 +39,7 @@ def get_episode(
         initial_states.append(state)
 
         root = MCTS(initial_states, representation, dynamics,
-                    prediction, game.action_space_size, 100, discount)
+                    prediction, game.action_space_size, num_simulations, discount)
 
         action = sample_action(root, temperature)
         reward, _ = game.step(action)
@@ -47,7 +47,7 @@ def get_episode(
         episode.add_transition(reward, action, state,
                                root.get_search_policy(), root.search_value())
 
-    episode.calc_targets_gae(discount)
+    episode.calculate_value_targets(discount_factor=discount)
     return episode
 
 
@@ -60,7 +60,8 @@ def get_episodes(
     prediction: Prediction,
     temperature: float,
     gameFactory,
-    discount
+    discount: float,
+    num_simulations: int
 ):
 
     torch.set_num_threads(1)
@@ -69,7 +70,7 @@ def get_episodes(
         episodes = pool.starmap(
             get_episode,
             [(num_initial_states, max_iters, representation, dynamics, prediction,
-              temperature, gameFactory(), discount) for _ in range(n_episodes)]
+              temperature, gameFactory(), discount, num_simulations) for _ in range(n_episodes)]
         )
 
     torch.set_num_threads(ncpus)
@@ -98,7 +99,7 @@ def test_get_episode():
 
     num_iterations = 30
     e = get_episode(num_initial_states, num_iterations,
-                    representation, dynamics, prediction, 1, game, 0.99)
+                    representation, dynamics, prediction, 1, game, 0.99, 50)
 
     assert len(e._states) == num_iterations
 
@@ -125,7 +126,7 @@ def test_get_episodeS():
     num_iterations = 30
     num_episodes = 10
     episodes = get_episodes(10, num_initial_states, num_iterations, representation,
-                            dynamics, prediction, 1, gameFactory, 0.99)
+                            dynamics, prediction, 1, gameFactory, 0.99, 50)
 
     assert len(episodes) == num_episodes
     assert episodes[0].get_num_transitions() == num_iterations

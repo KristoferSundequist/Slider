@@ -8,7 +8,7 @@ from torch.utils.data.sampler import BatchSampler, SubsetRandomSampler
 from datetime import datetime
 
 import slider
-#import slider_jumper
+# import slider_jumper
 import graphics
 
 from policy import *
@@ -40,49 +40,34 @@ action_space_size = game.action_space_size
 
 representation = Representation(
     num_initial_states, state_space_size, inner_size)
-representation_optimizer = torch.optim.AdamW(
-    representation.parameters(), lr=3e-4, weight_decay=1e-4)
 
 dynamics = Dynamics(inner_size, action_space_size)
-dynamics_optimizer = torch.optim.AdamW(
-    dynamics.parameters(), lr=3e-4, weight_decay=1e-4)
-
 prediction = Prediction(inner_size, action_space_size)
-prediction_optimizer = torch.optim.AdamW(
-    prediction.parameters(), lr=3e-4, weight_decay=1e-4)
-
 projector = Projector(inner_size)
-projector_optimizer = torch.optim.AdamW(
-    projector.parameters(), lr=3e-4, weight_decay=1e-4)
-
 simpredictor = Projector(inner_size)
-simpredictor_optimizer = torch.optim.AdamW(
-    simpredictor.parameters(), lr=3e-4, weight_decay=1e-4)
 
-replay_buffer = Replay_buffer(6*10)
-#replay_buffer = load_from_file('trajectories/trajs20230628')
+replay_buffer = Replay_buffer(6*5)
+# replay_buffer = load_from_file('trajectories/trajs20230628')
+
 
 def save(name):
     save_to_file(replay_buffer, f'trajectories/{name}')
     save_params(name)
+
 
 def load(name):
     global replay_buffer
     replay_buffer = load_from_file(f'trajectories/{name}')
     load_weights(name)
 
+
 def save_params(name):
     state = {
         "repr": representation.state_dict(),
-        "repr_opt": representation_optimizer.state_dict(),
         "dyn": dynamics.state_dict(),
-        "dyn_opt": dynamics_optimizer.state_dict(),
         "pred": prediction.state_dict(),
-        "pred_opt": prediction_optimizer.state_dict(),
         "projector": projector.state_dict(),
-        "projector_optimizer": projector_optimizer.state_dict(),
         "simpredictor": simpredictor.state_dict(),
-        "simpredictor_optimizer": simpredictor_optimizer.state_dict(),
     }
     torch.save(state, f'./weights/{name}')
 
@@ -91,46 +76,42 @@ def load_weights(name):
     state = torch.load(f'./weights/{name}')
 
     representation.load_state_dict(state['repr'])
-    representation_optimizer.load_state_dict(state['repr_opt'])
     dynamics.load_state_dict(state['dyn'])
-    dynamics_optimizer.load_state_dict(state['dyn_opt'])
     prediction.load_state_dict(state['pred'])
-    prediction_optimizer.load_state_dict(state['pred_opt'])
     projector.load_state_dict(state['projector'])
-    projector_optimizer.load_state_dict(state['projector_optimizer'])
     simpredictor.load_state_dict(state['simpredictor'])
-    simpredictor_optimizer.load_state_dict(state['simpredictor_optimizer'])
 
 
-def get_data(n_episodes: int, max_episode_length: int, temperature: float, discount: float = 0.99):
+def get_data(n_episodes: int, max_episode_length: int, temperature: float, discount_factor: float, num_simulations: int):
     episodes = get_episodes(n_episodes, num_initial_states, max_episode_length,
-                            representation, dynamics, prediction, temperature, gameFactory, discount)
+                            representation, dynamics, prediction, temperature, gameFactory, discount_factor, num_simulations)
 
     for e in episodes:
         logger.rewards.append(e.get_reward_sum())
 
     for e in episodes:
+        e.calculate_value_targets(discount_factor=discount_factor)
         replay_buffer.add_episode(e)
 
 
-def do_reanalyze_episodes(n_episodes: int, num_unroll_steps:int, discount: float = 0.99):
+def do_reanalyze_episodes(n_episodes: int, num_unroll_steps: int, discount: float, num_simulations: int):
     inds, episodes = replay_buffer.sample_episodes(n_episodes)
     reanalyzed_episodes = reanalze_episodes(
-        episodes, num_initial_states, representation, dynamics, prediction, discount, action_space_size, num_unroll_steps)
+        episodes, num_initial_states, representation, dynamics, prediction, discount, action_space_size, num_unroll_steps, num_simulations)
 
     for (i, e) in enumerate(reanalyzed_episodes):
         replay_buffer.replace_episode(inds[i], e)
 
 
-def train(batch_size: int = 1024, num_unroll_steps: int = 5):
+def train(batch_size: int, num_unroll_steps: int, discount_factor: float):
     batch = replay_buffer.sample_batch(
         batch_size, num_initial_states, num_unroll_steps)
 
-    train_on_batch(batch, representation, dynamics, prediction, representation_optimizer,
-                   dynamics_optimizer, prediction_optimizer, projector, projector_optimizer, simpredictor, simpredictor_optimizer, game.action_space_size, num_unroll_steps, num_initial_states, logger)
+    train_on_batch(batch, representation, dynamics, prediction, projector, simpredictor,
+                   game.action_space_size, num_unroll_steps, num_initial_states, logger)
 
 
-#main(20, 6, 4000, 1000, 1024, 5, 0.1, 0.99)
+# main(20, 6, 4000, 1000, 1024, 5, 0.1, 0.99, 50)
 def main(
     n_iters: int,
     n_episodes: int,
@@ -139,38 +120,36 @@ def main(
     batch_size: int = 1024,
     num_unroll_steps=5,
     temperature=1,
-    discount=0.99
+    discount=0.99,
+    num_simulations=50
 ):
     for i in range(n_iters):
         print(f'Iteration {i} of {n_iters}. {datetime.now()}.')
 
         print("Gathering data...")
-        get_data(n_episodes, max_episode_length, temperature, discount)
+        get_data(n_episodes, max_episode_length,
+                 temperature, discount, num_simulations)
         print(logger.get_mean_rewards_of_last_n(10))
         main_counter.increment()
 
         print("Training...")
         for _ in range(n_batches):
-            batch = replay_buffer.sample_batch(batch_size, num_initial_states, num_unroll_steps)
+            batch = replay_buffer.sample_batch(
+                batch_size=batch_size, num_initial_states=num_initial_states, num_unroll_steps=num_unroll_steps)
             train_on_batch(
                 batch,
                 representation,
                 dynamics,
                 prediction,
-                representation_optimizer,
-                dynamics_optimizer,
-                prediction_optimizer,
                 projector,
-                projector_optimizer,
                 simpredictor,
-                simpredictor_optimizer,
                 game.action_space_size,
                 num_unroll_steps,
                 num_initial_states,
                 logger
             )
-        #print("reanalyzing...")
-        #do_reanalyze_episodes(2, num_unroll_steps)
+        # print("reanalyzing...")
+        # do_reanalyze_episodes(2, num_unroll_steps)
 
 
 '''
@@ -206,7 +185,7 @@ def agent_loop(iterations: int, temperature: float = 1, num_simulations=50, disc
                     prediction, action_space_size, num_simulations, discount)
 
         action = sample_action(root, temperature)
-        #action = get_best_action(root)
+        # action = get_best_action(root)
         reward, _ = game.step(action)
 
         clear(win)
@@ -254,7 +233,7 @@ def human_play(iterations: int, record: bool = False):
         time.sleep(0.02)
 
     if record:
-        episode.calc_targets(0.99)
+        episode.calculate_value_targets(discount_factor=0.99)
         replay_buffer.add_episode(episode)
     win.close()
 
@@ -267,8 +246,8 @@ def human_play(iterations: int, record: bool = False):
 
 
 def test_get_data():
-    get_data(20, 50, 1)
-    assert len(replay_buffer.replay_buffer) == 20
+    get_data(7, 50, 1, 0.99, 50)
+    assert len(replay_buffer.replay_buffer) == 7
 
 
 '''
@@ -279,7 +258,7 @@ def test_get_data():
 def test_main():
     main(2, 6, 100, 4, 8)
     print(logger.head_losses[-40:])
-    #assert False
+    # assert False
 
 
 def test_MCTS():
@@ -299,7 +278,7 @@ def test_MCTS():
                     prediction, action_space_size, 50, .99)
 
         action = sample_action(root, 1)
-        #action = get_best_action(root)
+        # action = get_best_action(root)
         reward, _ = game.step(action)
 
     print_tree(root, 0, 2)
@@ -320,13 +299,14 @@ def test_correct_actions_in_train_batch():
     initial_states = 7
     num_unroll_steps = 5
     main(2, 6, 100, 4, 8)
-    batch = replay_buffer.sample_batch(3, initial_states, num_unroll_steps)
-    targets = [e[1] for e in batch]
+    batch = replay_buffer.sample_batch(
+        3, initial_states, num_unroll_steps)
+    targets = [e.targetValues for e in batch]
     g = gameFactory()
-    one_hot_actions, search_policies, value_targets, observed_rewards, isNotDone = prepare_targets(
+    one_hot_actions, search_policies, value_targets, observed_rewards = prepare_targets(
         targets, num_unroll_steps, g.action_space_size)
 
-    actions = [[ep_targs[2] for ep_targs in e] for e in targets]
+    actions = [[ep_targs.action for ep_targs in e] for e in targets]
 
     print("------------------------")
     print(targets)

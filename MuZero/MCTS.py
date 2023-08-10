@@ -3,6 +3,7 @@ import torch
 from policy import *
 from Node import *
 from util import *
+from typing import *
 
 
 def forward_simulation(
@@ -54,7 +55,7 @@ def get_noise(policy: np.ndarray, alpha: float = 0.25, frac: float = 0.25) -> np
 
 
 def MCTS(
-    initial_states: [np.ndarray],
+    initial_states: List[np.ndarray],
     representation: Representation,
     dynamics: Dynamics,
     prediction: Prediction,

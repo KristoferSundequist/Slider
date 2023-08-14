@@ -94,10 +94,11 @@ class Target:
 
 
 class Enemy:
-    def __init__(self, radius):
+    def __init__(self, radius, speed):
         self.x = float(np.random.randint(globals.width))
         self.y = float(np.random.randint(globals.height))
         self.radius = radius
+        self.speed = speed
 
     def reset(self):
         self.x = float(np.random.randint(globals.width))
@@ -111,14 +112,14 @@ class Enemy:
 
     def update(self, sliderx, slidery):
         if self.x > sliderx:
-            self.x -= 1
+            self.x -= self.speed
         else:
-            self.x += 1
+            self.x += self.speed
 
         if self.y > slidery:
-            self.y -= 1
+            self.y -= self.speed
         else:
-            self.y += 1
+            self.y += self.speed
 
 
 class Game:
@@ -128,7 +129,7 @@ class Game:
     def __init__(self):
         self.s = Slider()
         self.t = Target(50)
-        self.enemy = Enemy(30)
+        self.enemy = Enemy(30, 1)
 
     def intersect(self, a, b):
         return a.radius + b.radius > np.sqrt(np.power(a.x - b.x, 2) + np.power(a.y - b.y, 2))

@@ -12,9 +12,10 @@ class ReconstructionNetwork(nn.Module):
         super(ReconstructionNetwork, self).__init__()
         self.state_space_size = state_space_size
 
-        hidden_size = 128
+        hidden_size = 256
         self.fc1 = nn.Linear(globals.hidden_vector_size, hidden_size)
-        self.fc2 = nn.Linear(hidden_size, state_space_size)
+        self.fc2 = nn.Linear(hidden_size, hidden_size)
+        self.fc3 = nn.Linear(hidden_size, state_space_size)
 
         self.apply(self.weight_init)
         self.opt = optim.AdamW(self.parameters(), lr=globals.world_model_learning_rate, weight_decay=0.001)
@@ -39,7 +40,8 @@ class ReconstructionNetwork(nn.Module):
     def forward(self, hiddens: torch.Tensor) -> torch.Tensor:
         assert hiddens.size()[1] == globals.hidden_vector_size
         x = F.relu(self.fc1(hiddens))
-        return self.fc2(x)
+        x = F.relu(self.fc2(x))
+        return self.fc3(x)
 
 
 def test_reconstuction():

@@ -4,7 +4,7 @@ from typing import List
 
 
 def init_hidden(n: int):
-    return torch.zeros(n, globals.hidden_vector_size)
+    return torch.zeros(n, globals.hidden_vector_size).to(globals.device)
 
 
 def get_onehot(index: int, size: int):

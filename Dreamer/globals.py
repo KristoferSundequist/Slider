@@ -12,7 +12,7 @@ action_model_learning_rate = 8e-5
 hidden_vector_size = 128
 
 sequence_length = 50
-batch_size = 50
+batch_size = 51
 imagination_horizon=15
 kl_balancing_alpha = 0.8
 entropy_coeff = 0.005

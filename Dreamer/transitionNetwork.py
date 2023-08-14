@@ -12,10 +12,11 @@ class TransitionNetwork(nn.Module):
         super(TransitionNetwork, self).__init__()
         self.action_space_size = action_space_size
 
-        hidden_size = 128
+        hidden_size = 256
 
         self.fc1 = nn.Linear(action_space_size + globals.hidden_vector_size, hidden_size)
-        self.fc2 = nn.Linear(hidden_size, globals.hidden_vector_size)
+        self.fc2 = nn.Linear(hidden_size, hidden_size)
+        self.fc3 = nn.Linear(hidden_size, globals.hidden_vector_size)
 
         self.apply(self.weight_init)
         self.opt = optim.AdamW(self.parameters(), lr=globals.world_model_learning_rate, weight_decay=0.001)
@@ -42,7 +43,8 @@ class TransitionNetwork(nn.Module):
         assert prev_hiddens.size()[1] == globals.hidden_vector_size
         concatted = torch.concat([actions, prev_hiddens], 1)
         x = F.relu(self.fc1(concatted))
-        return F.tanh(self.fc2(x))
+        x = F.relu(self.fc2(x))
+        return F.tanh(self.fc3(x))
 
 
 def test_transition():

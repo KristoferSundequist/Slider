@@ -25,12 +25,12 @@ from valueNetwork import ValueNetwork
 game = slider.Game
 # game = simple_slider.Game
 
-representationNetwork = RepresentationNetwork(game.state_space_size, game.action_space_size)
-policyNetwork = PolicyNetwork(game.action_space_size)
-reconstructionNetwork = ReconstructionNetwork(game.state_space_size)
-rewardNetwork = RewardNetwork()
-transitionNetwork = TransitionNetwork(game.action_space_size)
-valueNetwork = ValueNetwork()
+representationNetwork = RepresentationNetwork(game.state_space_size, game.action_space_size).to(globals.device)
+policyNetwork = PolicyNetwork(game.action_space_size).to(globals.device)
+reconstructionNetwork = ReconstructionNetwork(game.state_space_size).to(globals.device)
+rewardNetwork = RewardNetwork().to(globals.device)
+transitionNetwork = TransitionNetwork(game.action_space_size).to(globals.device)
+valueNetwork = ValueNetwork().to(globals.device)
 
 replay_buffer = ReplayBuffer(globals.replay_buffer_size)
 
@@ -71,7 +71,9 @@ def live(iterations: int, should_improve: bool, should_render: bool, should_visu
         reward_belief = torch.tensor([0])
         with torch.no_grad():
             hidden_state = representationNetwork.forward(
-                torch.tensor([state]), torch.tensor([get_onehot(action, game.action_space_size)]), hidden_state
+                torch.tensor([state]).to(globals.device),
+                torch.tensor([get_onehot(action, game.action_space_size)]).to(globals.device),
+                hidden_state,
             )
             _probs, sampled_actions = policyNetwork.forward(hidden_state)
             action = sampled_actions[0]
@@ -91,7 +93,7 @@ def live(iterations: int, should_improve: bool, should_render: bool, should_visu
                 transitioned_hidden = hidden_state
                 for _ in range(globals.imagination_horizon):
                     transitioned_hidden = transitionNetwork.forward(
-                        torch.tensor([get_onehot(3, game.action_space_size)]), transitioned_hidden
+                        torch.tensor([get_onehot(3, game.action_space_size)]).to(globals.device), transitioned_hidden
                     )
                     reconstructed_state_from_transition = (
                         reconstructionNetwork.forward(transitioned_hidden).squeeze().tolist()
@@ -134,21 +136,28 @@ def live(iterations: int, should_improve: bool, should_render: bool, should_visu
 
 
 def improve(observed_sequences: List[Sequence]):
-    total_reconstruction_loss: torch.Tensor = torch.tensor(0.0)
-    total_reward_loss: torch.Tensor = torch.tensor(0.0)
-    total_transition_loss: torch.Tensor = torch.tensor(0.0)
-    total_value_loss: torch.Tensor = torch.tensor(0.0)
-    total_policy_loss: torch.Tensor = torch.tensor(0.0)
-    total_entropy_loss: torch.Tensor = torch.tensor(0.0)
+    total_reconstruction_loss: torch.Tensor = torch.tensor(0.0).to(globals.device)
+    total_reward_loss: torch.Tensor = torch.tensor(0.0).to(globals.device)
+    total_transition_loss: torch.Tensor = torch.tensor(0.0).to(globals.device)
+
+    saved_hidden_states = []
 
     hidden_states = init_hidden(len(observed_sequences)).detach()
     for i in range(globals.sequence_length):
         # prepare observed stuff
-        observed_states = torch.tensor([observation.observations[i] for observation in observed_sequences]).float()
-        onehot_taken_actions = torch.tensor(
-            [get_onehot(observation.actions[i], game.action_space_size) for observation in observed_sequences]
-        ).float()
-        observed_rewards = torch.tensor([[observation.rewards[i]] for observation in observed_sequences]).float()
+        observed_states = (
+            torch.tensor([observation.observations[i] for observation in observed_sequences]).float().to(globals.device)
+        )
+        onehot_taken_actions = (
+            torch.tensor(
+                [get_onehot(observation.actions[i], game.action_space_size) for observation in observed_sequences]
+            )
+            .float()
+            .to(globals.device)
+        )
+        observed_rewards = (
+            torch.tensor([[observation.rewards[i]] for observation in observed_sequences]).float().to(globals.device)
+        )
 
         # get next hidden states
         next_hidden_states = representationNetwork.forward(observed_states, onehot_taken_actions, hidden_states)
@@ -178,20 +187,19 @@ def improve(observed_sequences: List[Sequence]):
             total_reward_loss += reward_loss
             total_transition_loss += transition_loss
 
-        if i in [1, 5, 10]:
-            value_loss, policy_loss, entropy_loss = get_behaviour_losses(hidden_states)
-            total_value_loss += value_loss
-            total_policy_loss += policy_loss
-            total_entropy_loss += entropy_loss
-
         hidden_states = next_hidden_states
+        if i % 5 == 0:
+            saved_hidden_states.append(hidden_states.detach())
+
+    saved_hidden_states_tensor = torch.concat(saved_hidden_states, 0)
+    value_loss, policy_loss, entropy_loss = get_behaviour_losses(saved_hidden_states_tensor)
 
     logger.add_reconstuction_loss(total_reconstruction_loss.item())
     logger.add_reward_loss(total_reward_loss.item())
     logger.add_transition_loss(total_transition_loss.item())
-    logger.add_value_loss(total_value_loss.item())
-    logger.add_policy_loss(total_policy_loss.item())
-    logger.add_entropy_loss(total_entropy_loss.item())
+    logger.add_value_loss(value_loss.item())
+    logger.add_policy_loss(policy_loss.item())
+    logger.add_entropy_loss(entropy_loss.item())
 
     representationNetwork.opt.zero_grad()
     reconstructionNetwork.opt.zero_grad()
@@ -203,8 +211,8 @@ def improve(observed_sequences: List[Sequence]):
     total_loss = total_reconstruction_loss + total_reward_loss + 0.1 * total_transition_loss
     total_loss.backward()
 
-    total_value_loss.backward()
-    (total_policy_loss + globals.entropy_coeff * total_entropy_loss).backward()
+    value_loss.backward()
+    (policy_loss + globals.entropy_coeff * entropy_loss).backward()
 
     max_norm_clip = 100
     nn.utils.clip_grad.clip_grad_norm_(representationNetwork.parameters(), max_norm_clip)
@@ -233,9 +241,11 @@ def get_behaviour_losses(hidden_states: torch.Tensor) -> tuple[torch.Tensor, tor
     for i in range(globals.imagination_horizon):
         values = valueNetwork.forward(hidden_states).squeeze()
         action_probs, sampled_actions = policyNetwork.forward(hidden_states)
-        one_hot_actions = torch.tensor(
-            [get_onehot(action, game.action_space_size) for action in sampled_actions]
-        ).float()
+        one_hot_actions = (
+            torch.tensor([get_onehot(action, game.action_space_size) for action in sampled_actions])
+            .float()
+            .to(globals.device)
+        )
         with torch.no_grad():
             rewards = rewardNetwork.forward(hidden_states).squeeze().tolist()
             new_hidden_states = transitionNetwork.forward(one_hot_actions, hidden_states)
@@ -246,14 +256,15 @@ def get_behaviour_losses(hidden_states: torch.Tensor) -> tuple[torch.Tensor, tor
         all_one_hot_actions.append(one_hot_actions)
         all_rewards.append(rewards)
 
-    tensor_values = torch.stack(all_values).T
-    tensor_rewards = torch.tensor(all_rewards).T
+    tensor_values = torch.stack(all_values).T.to(globals.device)
+    tensor_rewards = torch.tensor(all_rewards).T.to(globals.device)
 
     # Calculate returns
     tensor_value_targets = calculate_value_targets_for_batch(
         tensor_rewards, tensor_values.detach(), globals.discount_factor, globals.keep_value_ratio
     )
-    assert tensor_value_targets.size() == (globals.batch_size, globals.imagination_horizon)
+    assert tensor_value_targets.size()[1] == globals.imagination_horizon
+    # assert tensor_value_targets.size() == (globals.sequence_length * globals.batch_size, globals.imagination_horizon)
 
     # Calculate losses
     assert tensor_value_targets.size() == tensor_values.size()
@@ -276,3 +287,9 @@ def live_loop(lives, iterations):
     for i in range(lives):
         print(f"Iteration: {i} of {lives}")
         live(iterations, True, False, False)
+
+
+def init(lives, iterations):
+    for i in range(lives):
+        print(f"Init: {i} of {lives}")
+        live(iterations, False, False, False)

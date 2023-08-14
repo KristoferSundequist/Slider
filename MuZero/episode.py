@@ -66,11 +66,17 @@ class Episode:
         return targets
 
     def calculate_value_targets(self, discount_factor: float):
+        discounted_rewards = [0.0 for _ in range(len(self._rewards))]
+        discounted_rewards[-1] = self._search_values[-1]
+
         targets = [0.0 for _ in range(len(self._rewards))]
         targets[-1] = self._search_values[-1]
 
+        old_new_value_ratio = 0.6
+
         for i in reversed(range(len(self._rewards)-1)):
-            targets[i] = self._rewards[i] + discount_factor * targets[i+1]
+            discounted_rewards[i] = self._rewards[i] + discount_factor * discounted_rewards[i+1]
+            targets[i] = old_new_value_ratio * self._search_values[i] + (1 - old_new_value_ratio) * discounted_rewards[i]
         
         self._value_targets = targets
 
@@ -246,3 +252,42 @@ def test_make_targets():
     assert targets[7].action == 2  # correct action
     assert all([np.array_equal(targets[i].search_policy, [90 + i, 0.2, 0.3, 0.4])
                for i in range(10)])
+
+'''
+
+    TEST calculate_value_targets
+
+'''
+
+
+def test_make_value_targets():
+    e = Episode(3)
+
+    for i in range(100):
+        if i == 50:
+            e.add_transition(0, 2, np.array([i, i, i]), [i, 0.2, 0.3, 0.4], 0)
+        elif i == 51:
+            e.add_transition(0, 2, np.array([i, i, i]), [i, 0.2, 0.3, 0.4], 0)
+        elif i == 52:
+            e.add_transition(1, 2, np.array([i, i, i]), [i, 0.2, 0.3, 0.4], 0)
+        elif i == 53:
+            e.add_transition(0, 2, np.array([i, i, i]), [i, 0.2, 0.3, 0.4], 0)
+        elif i == 54:
+            e.add_transition(0, 2, np.array([i, i, i]), [i, 0.2, 0.3, 0.4], 5)
+        elif i == 55:
+            e.add_transition(0, 2, np.array([i, i, i]), [i, 0.2, 0.3, 0.4], 0)
+        elif i == 56:
+            e.add_transition(1, 2, np.array([i, i, i]), [i, 0.2, 0.3, 0.4], 0)
+        elif i == 57:
+            e.add_transition(1, 2, np.array([i, i, i]), [i, 0.2, 0.3, 0.4], 0)
+        else:
+            e.add_transition(0, 2, np.array([i, i, i]), [i, 0.2, 0.3, 0.4], 0)
+
+    # tagets == [(value, reward, action, search_policy, isNotDone)]
+    e.calculate_value_targets(0.99)
+
+    targets = e._make_targets(50, 10)
+    for t in targets:
+        print(t)
+    assert len(targets) == 10  # correct num transitions
+    #assert False

@@ -3,6 +3,7 @@ from torch import autograd, nn, optim
 import torch.nn.functional as F
 import numpy as np
 from util import *
+import globals
 
 '''
 
@@ -34,7 +35,7 @@ class Representation(nn.Module):
         self.w2 = nn.Linear(256, 256)
         self.w3 = nn.Linear(256, inner_size)
 
-        self.opt = torch.optim.AdamW(self.parameters(), lr=3e-4, weight_decay=1e-4)
+        self.opt = torch.optim.AdamW(self.parameters(), lr=globals.model_learning_rate, weight_decay=1e-4)
 
     def prepare_states(self, initial_states):
         return torch.Tensor(np.reshape(np.array(initial_states), [-1, self.num_states*self.state_space_size]))
@@ -120,7 +121,7 @@ class Dynamics(nn.Module):
         self.s2 = nn.Linear(256, 256)
         self.state_out = nn.Linear(256, inner_size)
 
-        self.opt = torch.optim.AdamW(self.parameters(), lr=3e-4, weight_decay=1e-4)
+        self.opt = torch.optim.AdamW(self.parameters(), lr=globals.model_learning_rate, weight_decay=1e-4)
 
     def forward(self, state: torch.Tensor,
                 action: torch.Tensor) -> (torch.Tensor, torch.Tensor):
@@ -176,7 +177,7 @@ class Prediction(nn.Module):
         self.v2 = nn.Linear(256, 256)
         self.value_out = nn.Linear(256, 1)
 
-        self.opt = torch.optim.AdamW(self.parameters(), lr=3e-4, weight_decay=1e-4)
+        self.opt = torch.optim.AdamW(self.parameters(), lr=globals.model_learning_rate, weight_decay=1e-4)
 
     def forward(self, state: torch.Tensor) -> (torch.Tensor, torch.Tensor):
 
@@ -222,7 +223,7 @@ class Projector(nn.Module):
         self.hidden = nn.Linear(inner_size, 256)
         self.out = nn.Linear(256, inner_size)
 
-        self.opt = torch.optim.AdamW(self.parameters(), lr=3e-4, weight_decay=1e-4)
+        self.opt = torch.optim.AdamW(self.parameters(), lr=globals.model_learning_rate, weight_decay=1e-4)
 
 
     def forward(self, inner_state: torch.Tensor) -> torch.Tensor:

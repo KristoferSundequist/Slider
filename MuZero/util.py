@@ -165,7 +165,7 @@ def test_categorical_cross_entropy():
     loss_ac = categorical_cross_entropy(a,c)
     assert loss_ab > loss_ac
 
-def test_categorical_cross_entropy():
+def test_categorical_cross_entropy2():
     a = torch.tensor([[0.2,0.1,0.5,0.2]])
     b = torch.tensor([[0.7,0.1,0.1,0.1]])
 

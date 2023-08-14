@@ -48,7 +48,7 @@ class Node:
         return probs
 
     def search_value(self) -> float:
-        p = self.get_search_policy()
+        p = self.get_search_policy(0.25)
         return sum([self.mean_values[a] * p[a] for a in range(self.action_space_size)])
 
     def expand(self, a: int, r: float, node):

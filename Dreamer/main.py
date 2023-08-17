@@ -167,20 +167,23 @@ def improve(observed_sequences: List[Sequence]):
             # reconstruction loss
             reconstructed_hidden_states = reconstructionNetwork.forward(hidden_states)
             assert reconstructed_hidden_states.size() == observed_states.size()
-            reconstruction_loss = (reconstructed_hidden_states - observed_states).pow(2).mean()
+            reconstruction_loss = 0.5 * (reconstructed_hidden_states - observed_states).pow(2).mean()
 
             # reward loss
             predicted_rewards = rewardNetwork.forward(hidden_states)
             assert predicted_rewards.size() == observed_rewards.size()
-            reward_loss = (predicted_rewards - observed_rewards).pow(2).mean()
+            reward_loss = 0.5 * (predicted_rewards - observed_rewards).pow(2).mean()
 
             # transition loss
             transition_hidden_states = transitionNetwork.forward(onehot_taken_actions, hidden_states)
             assert transition_hidden_states.size() == next_hidden_states.size()
             transition_loss = (
-                globals.kl_balancing_alpha * (transition_hidden_states - next_hidden_states.detach()).pow(2).mean()
+                globals.kl_balancing_alpha
+                * (transition_hidden_states - next_hidden_states.detach()).pow(2).mean()
+                * 0.5
                 + (1 - globals.kl_balancing_alpha)
                 * (transition_hidden_states.detach() - next_hidden_states).pow(2).mean()
+                * 0.5
             )
 
             total_reconstruction_loss += reconstruction_loss
@@ -191,46 +194,36 @@ def improve(observed_sequences: List[Sequence]):
         if i % 5 == 0:
             saved_hidden_states.append(hidden_states.detach())
 
-    saved_hidden_states_tensor = torch.concat(saved_hidden_states, 0)
-    value_loss, policy_loss, entropy_loss = get_behaviour_losses(saved_hidden_states_tensor)
-
     logger.add_reconstuction_loss(total_reconstruction_loss.item())
     logger.add_reward_loss(total_reward_loss.item())
     logger.add_transition_loss(total_transition_loss.item())
-    logger.add_value_loss(value_loss.item())
-    logger.add_policy_loss(policy_loss.item())
-    logger.add_entropy_loss(entropy_loss.item())
 
     representationNetwork.opt.zero_grad()
     reconstructionNetwork.opt.zero_grad()
     rewardNetwork.opt.zero_grad()
     transitionNetwork.opt.zero_grad()
-    valueNetwork.opt.zero_grad()
-    policyNetwork.opt.zero_grad()
 
-    total_loss = total_reconstruction_loss + total_reward_loss + 0.1 * total_transition_loss
+    total_loss = total_reconstruction_loss + total_reward_loss + 0.5 * total_transition_loss
     total_loss.backward()
 
-    value_loss.backward()
-    (policy_loss + globals.entropy_coeff * entropy_loss).backward()
-
-    max_norm_clip = 100
+    max_norm_clip = 0.5
     nn.utils.clip_grad.clip_grad_norm_(representationNetwork.parameters(), max_norm_clip)
     nn.utils.clip_grad.clip_grad_norm_(reconstructionNetwork.parameters(), max_norm_clip)
     nn.utils.clip_grad.clip_grad_norm_(rewardNetwork.parameters(), max_norm_clip)
     nn.utils.clip_grad.clip_grad_norm_(transitionNetwork.parameters(), max_norm_clip)
-    nn.utils.clip_grad.clip_grad_norm_(valueNetwork.parameters(), max_norm_clip)
-    nn.utils.clip_grad.clip_grad_norm_(policyNetwork.parameters(), max_norm_clip)
 
     representationNetwork.opt.step()
     reconstructionNetwork.opt.step()
     rewardNetwork.opt.step()
     transitionNetwork.opt.step()
-    policyNetwork.opt.step()
-    valueNetwork.opt.step()
+
+    # BEHAVIOIR LEARNING
+
+    saved_hidden_states_tensor = torch.concat(saved_hidden_states, 0)
+    improve_behaviour(saved_hidden_states_tensor)
 
 
-def get_behaviour_losses(hidden_states: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+def improve_behaviour(hidden_states: torch.Tensor):
     # Imagine forward and store actions and values
     hidden_states = hidden_states.detach()
     all_one_hot_actions = []
@@ -268,7 +261,7 @@ def get_behaviour_losses(hidden_states: torch.Tensor) -> tuple[torch.Tensor, tor
 
     # Calculate losses
     assert tensor_value_targets.size() == tensor_values.size()
-    value_loss = (tensor_value_targets - tensor_values).pow(2).mean()
+    value_loss = 0.5 * (tensor_value_targets - tensor_values).pow(2).mean()
 
     advantages = (tensor_value_targets - tensor_values).detach()
     all_one_hot_actions_tensor = torch.stack(all_one_hot_actions).permute((1, 0, 2))
@@ -280,7 +273,22 @@ def get_behaviour_losses(hidden_states: torch.Tensor) -> tuple[torch.Tensor, tor
 
     entropy = -(all_actions_probs_tensor * torch.log(all_actions_probs_tensor + 1e-08)).sum(2)
     entropy_loss = -entropy.mean()
-    return value_loss, policy_loss, entropy_loss
+
+    logger.add_value_loss(value_loss.item())
+    logger.add_policy_loss(policy_loss.item())
+    logger.add_entropy_loss(entropy_loss.item())
+
+    valueNetwork.opt.zero_grad()
+    policyNetwork.opt.zero_grad()
+
+    value_loss.backward()
+    (policy_loss + globals.entropy_coeff * entropy_loss).backward()
+
+    nn.utils.clip_grad.clip_grad_norm_(valueNetwork.parameters(), 0.5)
+    nn.utils.clip_grad.clip_grad_norm_(policyNetwork.parameters(), 0.5)
+
+    policyNetwork.opt.step()
+    valueNetwork.opt.step()
 
 
 def live_loop(lives, iterations):

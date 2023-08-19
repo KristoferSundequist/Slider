@@ -1,6 +1,6 @@
 import slider
 
-# import simple_slider
+import simple_slider
 import time
 import torch
 from torch import nn
@@ -14,13 +14,14 @@ import globals
 import numpy as np
 from sequenceBuffer import *
 from logger import *
-from utils import init_hidden, get_onehot, calculate_value_targets_for_batch
+from utils import init_hidden, calculate_value_targets_for_batch
 from representationNetwork import RepresentationNetwork
 from policyNetwork import PolicyNetwork
 from reconstructionNetwork import ReconstructionNetwork
 from rewardNetwork import RewardNetwork
 from transitionNetwork import TransitionNetwork
 from valueNetwork import ValueNetwork
+from torch.distributions import Categorical, OneHotCategorical
 
 game = slider.Game
 # game = simple_slider.Game
@@ -31,6 +32,7 @@ reconstructionNetwork = ReconstructionNetwork(game.state_space_size).to(globals.
 rewardNetwork = RewardNetwork().to(globals.device)
 transitionNetwork = TransitionNetwork(game.action_space_size).to(globals.device)
 valueNetwork = ValueNetwork().to(globals.device)
+targetValueNetwork = copy.deepcopy(valueNetwork)
 
 replay_buffer = ReplayBuffer(globals.replay_buffer_size)
 
@@ -42,6 +44,8 @@ logger = Logger()
 
 
 def live(iterations: int, should_improve: bool, should_render: bool, should_visualize_reconstruction: bool):
+    global targetValueNetwork
+
     win: GraphWin | None = None
     if should_render:
         win = GraphWin("Real game", globals.width, globals.height)
@@ -72,11 +76,10 @@ def live(iterations: int, should_improve: bool, should_render: bool, should_visu
         with torch.no_grad():
             hidden_state = representationNetwork.forward(
                 torch.tensor([state]).to(globals.device),
-                torch.tensor([get_onehot(action, game.action_space_size)]).to(globals.device),
+                F.one_hot(torch.tensor([action]), game.action_space_size).float().to(globals.device),
                 hidden_state,
             )
-            _probs, sampled_actions = policyNetwork.forward(hidden_state)
-            action = sampled_actions[0]
+            action = Categorical(logits=policyNetwork.forward(hidden_state)).sample().item()
             if should_render:
                 reward_belief = rewardNetwork.forward(hidden_state).squeeze()
                 value = valueNetwork.forward(hidden_state).squeeze()
@@ -93,7 +96,8 @@ def live(iterations: int, should_improve: bool, should_render: bool, should_visu
                 transitioned_hidden = hidden_state
                 for _ in range(globals.imagination_horizon):
                     transitioned_hidden = transitionNetwork.forward(
-                        torch.tensor([get_onehot(3, game.action_space_size)]).to(globals.device), transitioned_hidden
+                        F.one_hot(torch.tensor([3]), game.action_space_size).float().to(globals.device),
+                        transitioned_hidden,
                     )
                     reconstructed_state_from_transition = (
                         reconstructionNetwork.forward(transitioned_hidden).squeeze().tolist()
@@ -115,8 +119,10 @@ def live(iterations: int, should_improve: bool, should_render: bool, should_visu
         if i > globals.sequence_length:
             replay_buffer.push(sequenceBuffer.get())
 
-        if len(replay_buffer) > 1000 and should_improve and i % 10 == 0:
+        if len(replay_buffer) > 1000 and should_improve and i % globals.update_frequency == 0:
             improve(replay_buffer.sample(globals.batch_size))
+            if i % (globals.update_frequency * 100) == 0:
+                targetValueNetwork = copy.deepcopy(valueNetwork)
 
         total_episode_reward += reward
 
@@ -149,8 +155,8 @@ def improve(observed_sequences: List[Sequence]):
             torch.tensor([observation.observations[i] for observation in observed_sequences]).float().to(globals.device)
         )
         onehot_taken_actions = (
-            torch.tensor(
-                [get_onehot(observation.actions[i], game.action_space_size) for observation in observed_sequences]
+            F.one_hot(
+                torch.tensor([observation.actions[i] for observation in observed_sequences]), game.action_space_size
             )
             .float()
             .to(globals.device)
@@ -229,32 +235,32 @@ def improve_behaviour(hidden_states: torch.Tensor):
     all_one_hot_actions = []
     all_action_probs = []
     all_values = []
+    all_lagged_value_targets = []
     all_rewards: List[List[float]] = []
 
     for i in range(globals.imagination_horizon):
         values = valueNetwork.forward(hidden_states).squeeze()
-        action_probs, sampled_actions = policyNetwork.forward(hidden_states)
-        one_hot_actions = (
-            torch.tensor([get_onehot(action, game.action_space_size) for action in sampled_actions])
-            .float()
-            .to(globals.device)
-        )
+        policy_dist = OneHotCategorical(logits=policyNetwork.forward(hidden_states))
+        one_hot_actions = policy_dist.sample().float()
         with torch.no_grad():
+            lagged_value_targets = targetValueNetwork.forward(hidden_states).squeeze()
             rewards = rewardNetwork.forward(hidden_states).squeeze().tolist()
             new_hidden_states = transitionNetwork.forward(one_hot_actions, hidden_states)
             hidden_states = new_hidden_states
 
         all_values.append(values)
-        all_action_probs.append(action_probs)
+        all_lagged_value_targets.append(lagged_value_targets)
+        all_action_probs.append(policy_dist.probs)
         all_one_hot_actions.append(one_hot_actions)
         all_rewards.append(rewards)
 
     tensor_values = torch.stack(all_values).T.to(globals.device)
+    tensor_lagged_value_targets = torch.stack(all_lagged_value_targets).T.to(globals.device)
     tensor_rewards = torch.tensor(all_rewards).T.to(globals.device)
 
     # Calculate returns
     tensor_value_targets = calculate_value_targets_for_batch(
-        tensor_rewards, tensor_values.detach(), globals.discount_factor, globals.keep_value_ratio
+        tensor_rewards, tensor_lagged_value_targets, globals.discount_factor, globals.keep_value_ratio
     )
     assert tensor_value_targets.size()[1] == globals.imagination_horizon
     # assert tensor_value_targets.size() == (globals.sequence_length * globals.batch_size, globals.imagination_horizon)

@@ -36,15 +36,11 @@ class PolicyNetwork(nn.Module):
             variance = np.sqrt(2.0 / (fan_in + fan_out))
             m.weight.data.normal_(0.0, variance)
 
-    def forward(self, hidden_states: torch.Tensor) -> tuple[torch.Tensor, List[int]]:
+    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         assert hidden_states.size()[1] == globals.hidden_vector_size
         x = F.relu(self.fc1(hidden_states))
         x = F.relu(self.fc2(x))
-        x = self.fc3(x)
-        probs = F.softmax(x, 1)
-        sampled_actions_raw = probs.multinomial(1).tolist()
-        sampled_actions = [action_list[0] for action_list in sampled_actions_raw]
-        return probs, sampled_actions
+        return self.fc3(x)
 
 
 def test_policy():
@@ -54,10 +50,7 @@ def test_policy():
     policyNetwork = PolicyNetwork(action_space_size)
 
     # Act
-    probs, actions = policyNetwork.forward(hiddens)
+    logits = policyNetwork.forward(hiddens)
 
     # Assert
-    assert probs.size() == (7, action_space_size)
-    assert probs.sum(1).mean().item() == 1
-    assert len(actions) == (7)
-    assert all([action < 4 for action in actions])
+    assert logits.size() == (7, action_space_size)

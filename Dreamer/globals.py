@@ -17,5 +17,7 @@ imagination_horizon=15
 kl_balancing_alpha = 0.8
 entropy_coeff = 0.005
 
+update_frequency = 20
+
 width = 700
 height = 700

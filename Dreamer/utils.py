@@ -7,15 +7,6 @@ def init_hidden(n: int):
     return torch.zeros(n, globals.hidden_vector_size).to(globals.device)
 
 
-def get_onehot(index: int, size: int):
-    onehot = [0 for _ in range(size)]
-    onehot[index] = 1
-    return onehot
-
-
-def test_onehot():
-    assert get_onehot(3, 5) == [0, 0, 0, 1, 0]
-
 def calculate_value_targets_for_batch(
     rewards: torch.Tensor, values: torch.Tensor, discount_factor: float, keep_value_ratio: float
 ) -> torch.Tensor:

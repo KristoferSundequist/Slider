@@ -14,7 +14,7 @@ import globals
 import numpy as np
 from sequenceBuffer import *
 from logger import *
-from utils import init_hidden, calculate_value_targets_for_batch
+from utils import calculate_value_targets_for_batch
 from representationNetwork import RepresentationNetwork
 from policyNetwork import PolicyNetwork
 from reconstructionNetwork import ReconstructionNetwork
@@ -68,7 +68,7 @@ def live(iterations: int, should_improve: bool, should_render: bool, should_visu
     start = time.time()
 
     state = g.get_state()
-    hidden_state = init_hidden(1)
+    hidden_state = representationNetwork.get_initial(1)
     action = 0
     for i in range(iterations):
         value = torch.tensor([0])
@@ -145,10 +145,11 @@ def improve(observed_sequences: List[Sequence]):
     total_reconstruction_loss: torch.Tensor = torch.tensor(0.0).to(globals.device)
     total_reward_loss: torch.Tensor = torch.tensor(0.0).to(globals.device)
     total_transition_loss: torch.Tensor = torch.tensor(0.0).to(globals.device)
+    total_representation_loss: torch.Tensor = torch.tensor(0.0).to(globals.device)
 
     saved_hidden_states = []
 
-    hidden_states = init_hidden(len(observed_sequences)).detach()
+    hidden_states = representationNetwork.get_initial(len(observed_sequences))
     for i in range(globals.sequence_length):
         # prepare observed stuff
         observed_states = (
@@ -183,18 +184,13 @@ def improve(observed_sequences: List[Sequence]):
             # transition loss
             transition_hidden_states = transitionNetwork.forward(onehot_taken_actions, hidden_states)
             assert transition_hidden_states.size() == next_hidden_states.size()
-            transition_loss = (
-                globals.kl_balancing_alpha
-                * (transition_hidden_states - next_hidden_states.detach()).pow(2).mean()
-                * 0.5
-                + (1 - globals.kl_balancing_alpha)
-                * (transition_hidden_states.detach() - next_hidden_states).pow(2).mean()
-                * 0.5
-            )
+            transition_loss = 0.5 * (transition_hidden_states - next_hidden_states.detach()).pow(2).mean()
+            representation_loss = 0.5 * (transition_hidden_states.detach() - next_hidden_states).pow(2).mean()
 
             total_reconstruction_loss += reconstruction_loss
             total_reward_loss += reward_loss
-            total_transition_loss += transition_loss
+            total_transition_loss += 0.5 * transition_loss
+            total_representation_loss += 0.1 * representation_loss
 
         hidden_states = next_hidden_states
         if i % 5 == 0:
@@ -203,13 +199,16 @@ def improve(observed_sequences: List[Sequence]):
     logger.add_reconstuction_loss(total_reconstruction_loss.item())
     logger.add_reward_loss(total_reward_loss.item())
     logger.add_transition_loss(total_transition_loss.item())
+    logger.add_representation_loss(total_representation_loss.item())
 
     representationNetwork.opt.zero_grad()
     reconstructionNetwork.opt.zero_grad()
     rewardNetwork.opt.zero_grad()
     transitionNetwork.opt.zero_grad()
 
-    total_loss = total_reconstruction_loss + total_reward_loss + 0.5 * total_transition_loss
+    total_loss = (
+        total_reconstruction_loss + total_reward_loss + total_transition_loss + total_representation_loss
+    )
     total_loss.backward()
 
     max_norm_clip = 0.5

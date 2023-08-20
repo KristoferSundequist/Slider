@@ -10,6 +10,7 @@ class Logger:
         self.value_losses = []
         self.policy_losses = []
         self.entropy_losses = []
+        self.representation_losses = []
 
     def add_reward(self, reward: float):
         self.rewards.append(reward)
@@ -31,6 +32,9 @@ class Logger:
 
     def add_entropy_loss(self, entropy_loss: float):
         self.entropy_losses.append(entropy_loss)
+    
+    def add_representation_loss(self, representation_loss: float):
+        self.representation_losses.append(representation_loss)
 
     def get_running_avg_reward(self):
         if len(self.rewards) == 0:
@@ -88,5 +92,12 @@ class Logger:
         )
         ax[3, 0].set(xlabel="#Batch", ylabel="Entropy loss (unscaled)")
         ax[3, 0].grid()
+
+        ax[3, 1].plot(
+            [i for i in range(1, len(self.representation_losses) + 1)][-last_n:],
+            [number for number in self.representation_losses][-last_n:],
+        )
+        ax[3, 1].set(xlabel="#Batch", ylabel="Representation loss (unscaled)")
+        ax[3, 1].grid()
 
         plt.show()

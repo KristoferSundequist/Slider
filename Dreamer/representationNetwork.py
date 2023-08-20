@@ -19,8 +19,13 @@ class RepresentationNetwork(nn.Module):
         self.fc2 = nn.Linear(hidden_size, hidden_size)
         self.fc3 = nn.Linear(hidden_size, globals.hidden_vector_size)
 
+        self.initial_hidden = nn.Parameter(torch.zeros(globals.hidden_vector_size), requires_grad=True)
+
         self.apply(self.weight_init)
         self.opt = optim.AdamW(self.parameters(), lr=globals.world_model_learning_rate, weight_decay=0.001)
+
+    def get_initial(self, n: int) -> torch.Tensor:
+        return self.initial_hidden.repeat(n, 1)
 
     def copy_weights(self, other):
         self.load_state_dict(copy.deepcopy(other.state_dict()))
@@ -46,7 +51,7 @@ class RepresentationNetwork(nn.Module):
         concatted = torch.concat([states, actions, prev_hiddens], 1)
         x = F.relu(self.fc1(concatted))
         x = F.relu(self.fc2(x))
-        return F.tanh(self.fc3(x))
+        return self.fc3(x)
 
 
 def test_representation():

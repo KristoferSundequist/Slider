@@ -9,7 +9,7 @@ world_model_learning_rate = 6e-4
 value_model_learning_rate = 8e-5
 action_model_learning_rate = 8e-5
 
-hidden_vector_size = 128
+hidden_vector_size = 256
 
 sequence_length = 50
 batch_size = 51

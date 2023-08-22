@@ -119,9 +119,9 @@ def live(iterations: int, should_improve: bool, should_render: bool, should_visu
         if i > globals.sequence_length:
             replay_buffer.push(sequenceBuffer.get())
 
-        if len(replay_buffer) > 1000 and should_improve and i % globals.update_frequency == 0:
+        if i != 0 and len(replay_buffer) > 1000 and should_improve and i % globals.update_frequency == 0:
             improve(replay_buffer.sample(globals.batch_size))
-            if i % (globals.update_frequency * 100) == 0:
+            if i % (globals.update_frequency * 200) == 0:
                 targetValueNetwork = copy.deepcopy(valueNetwork)
 
         total_episode_reward += reward
@@ -193,8 +193,7 @@ def improve(observed_sequences: List[Sequence]):
             total_representation_loss += 0.1 * representation_loss
 
         hidden_states = next_hidden_states
-        if i % 5 == 0:
-            saved_hidden_states.append(hidden_states.detach())
+        saved_hidden_states.append(hidden_states.detach())
 
     logger.add_reconstuction_loss(total_reconstruction_loss.item())
     logger.add_reward_loss(total_reward_loss.item())
@@ -206,9 +205,7 @@ def improve(observed_sequences: List[Sequence]):
     rewardNetwork.opt.zero_grad()
     transitionNetwork.opt.zero_grad()
 
-    total_loss = (
-        total_reconstruction_loss + total_reward_loss + total_transition_loss + total_representation_loss
-    )
+    total_loss = total_reconstruction_loss + total_reward_loss + total_transition_loss + total_representation_loss
     total_loss.backward()
 
     max_norm_clip = 0.5
@@ -234,7 +231,7 @@ def improve_behaviour(hidden_states: torch.Tensor):
     all_one_hot_actions = []
     all_action_probs = []
     all_values = []
-    all_lagged_value_targets = []
+    all_lagged_values = []
     all_rewards: List[List[float]] = []
 
     for i in range(globals.imagination_horizon):
@@ -248,18 +245,18 @@ def improve_behaviour(hidden_states: torch.Tensor):
             hidden_states = new_hidden_states
 
         all_values.append(values)
-        all_lagged_value_targets.append(lagged_value_targets)
+        all_lagged_values.append(lagged_value_targets)
         all_action_probs.append(policy_dist.probs)
         all_one_hot_actions.append(one_hot_actions)
         all_rewards.append(rewards)
 
     tensor_values = torch.stack(all_values).T.to(globals.device)
-    tensor_lagged_value_targets = torch.stack(all_lagged_value_targets).T.to(globals.device)
+    tensor_lagged_values = torch.stack(all_lagged_values).T.to(globals.device)
     tensor_rewards = torch.tensor(all_rewards).T.to(globals.device)
 
     # Calculate returns
     tensor_value_targets = calculate_value_targets_for_batch(
-        tensor_rewards, tensor_lagged_value_targets, globals.discount_factor, globals.keep_value_ratio
+        tensor_rewards, tensor_lagged_values, globals.discount_factor, globals.keep_value_ratio
     )
     assert tensor_value_targets.size()[1] == globals.imagination_horizon
     # assert tensor_value_targets.size() == (globals.sequence_length * globals.batch_size, globals.imagination_horizon)

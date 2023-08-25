@@ -3,15 +3,24 @@ import globals
 from typing import List
 
 
-#initial_hidden = torch.zeros(globals.hidden_vector_size, requires_grad=True)
+# initial_hidden = torch.zeros(globals.hidden_vector_size, requires_grad=True)
 
-#def init_hidden(n: int):
-    #return initial_hidden.repeat(n, 1).to(globals.device)
-    #return torch.zeros(n, globals.hidden_vector_size).to(globals.device)
+# def init_hidden(n: int):
+# return initial_hidden.repeat(n, 1).to(globals.device)
+# return torch.zeros(n, globals.hidden_vector_size).to(globals.device)
 
 
-def calculate_value_targets_for_batch(
-    rewards: torch.Tensor, values: torch.Tensor, discount_factor: float, keep_value_ratio: float
+def calculate_value_targets_for_batch(rewards: torch.Tensor, values: torch.Tensor, lmbda: float = 0.95, discount: float = 0.99):
+    targets = torch.zeros_like(values)
+    targets[:, -1] = values[:, -1]
+
+    for i in reversed(range(values.size()[1] - 1)):
+        targets[:, i] = rewards[:, i] + discount * ((1.0 - lmbda) * values[:, i + 1] + lmbda * targets[:, i + 1])
+    return targets
+
+
+def calculate_value_targets_for_batch_old(
+    rewards: torch.Tensor, values: torch.Tensor, discount_factor: float = 0.99, keep_value_ratio: float = 0.5
 ) -> torch.Tensor:
     value_targets = torch.zeros_like(rewards).float()
     value_targets[:, -1] = values[:, -1]
@@ -26,7 +35,7 @@ def calculate_value_targets_for_batch(
     return value_targets
 
 
-def test_calculate_value_targets_for_batch():
+def test_calculate_value_targets_for_batch_old():
     # Arrange
     rewards = torch.Tensor([[0.0, 0, 0, 0, 0, 0, 0, 0, 1, 0], [0.0, 0, 0, 0, 0, 0, 0, 0, 2, 0]])
     values = torch.Tensor(
@@ -34,7 +43,7 @@ def test_calculate_value_targets_for_batch():
     )
 
     # Act
-    targets = calculate_value_targets_for_batch(rewards, values, 0.99, 0.3)
+    targets = calculate_value_targets_for_batch_old(rewards, values, 0.99, 0.3)
 
     # Assert
     print(targets)

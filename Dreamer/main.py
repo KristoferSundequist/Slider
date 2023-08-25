@@ -28,6 +28,7 @@ game = slider.Game
 
 representationNetwork = RepresentationNetwork(game.state_space_size, game.action_space_size).to(globals.device)
 policyNetwork = PolicyNetwork(game.action_space_size).to(globals.device)
+laggedPolicyNetwork = copy.deepcopy(policyNetwork)
 reconstructionNetwork = ReconstructionNetwork(game.state_space_size).to(globals.device)
 rewardNetwork = RewardNetwork().to(globals.device)
 transitionNetwork = TransitionNetwork(game.action_space_size).to(globals.device)
@@ -45,6 +46,7 @@ logger = Logger()
 
 def live(iterations: int, should_improve: bool, should_render: bool, should_visualize_reconstruction: bool):
     global targetValueNetwork
+    global laggedPolicyNetwork
 
     win: GraphWin | None = None
     if should_render:
@@ -123,6 +125,7 @@ def live(iterations: int, should_improve: bool, should_render: bool, should_visu
             improve(replay_buffer.sample(globals.batch_size))
             if i % (globals.update_frequency * 200) == 0:
                 targetValueNetwork = copy.deepcopy(valueNetwork)
+                laggedPolicyNetwork = copy.deepcopy(policyNetwork)
 
         total_episode_reward += reward
 
@@ -192,7 +195,7 @@ def improve(observed_sequences: List[Sequence]):
             total_transition_loss += 0.5 * transition_loss
             total_representation_loss += 0.1 * representation_loss
 
-        hidden_states = next_hidden_states
+        hidden_states = next_hidden_states + torch.normal(torch.zeros_like(next_hidden_states), 0.01)
         saved_hidden_states.append(hidden_states.detach())
 
     logger.add_reconstuction_loss(total_reconstruction_loss.item())
@@ -230,6 +233,7 @@ def improve_behaviour(hidden_states: torch.Tensor):
     hidden_states = hidden_states.detach()
     all_one_hot_actions = []
     all_action_probs = []
+    #all_lagged_action_probs = []
     all_values = []
     all_lagged_values = []
     all_rewards: List[List[float]] = []
@@ -241,23 +245,23 @@ def improve_behaviour(hidden_states: torch.Tensor):
         with torch.no_grad():
             lagged_value_targets = targetValueNetwork.forward(hidden_states).squeeze()
             rewards = rewardNetwork.forward(hidden_states).squeeze().tolist()
+            #lagged_policy_dist = OneHotCategorical(logits=laggedPolicyNetwork.forward(hidden_states))
             new_hidden_states = transitionNetwork.forward(one_hot_actions, hidden_states)
-            hidden_states = new_hidden_states
+            hidden_states = new_hidden_states + torch.normal(torch.zeros_like(new_hidden_states), 0.01)
 
         all_values.append(values)
         all_lagged_values.append(lagged_value_targets)
         all_action_probs.append(policy_dist.probs)
         all_one_hot_actions.append(one_hot_actions)
         all_rewards.append(rewards)
+        #all_lagged_action_probs.append(lagged_policy_dist.probs)
 
     tensor_values = torch.stack(all_values).T.to(globals.device)
     tensor_lagged_values = torch.stack(all_lagged_values).T.to(globals.device)
     tensor_rewards = torch.tensor(all_rewards).T.to(globals.device)
 
     # Calculate returns
-    tensor_value_targets = calculate_value_targets_for_batch(
-        tensor_rewards, tensor_lagged_values, globals.discount_factor, globals.keep_value_ratio
-    )
+    tensor_value_targets = calculate_value_targets_for_batch(tensor_rewards, tensor_lagged_values)
     assert tensor_value_targets.size()[1] == globals.imagination_horizon
     # assert tensor_value_targets.size() == (globals.sequence_length * globals.batch_size, globals.imagination_horizon)
 
@@ -268,9 +272,16 @@ def improve_behaviour(hidden_states: torch.Tensor):
     advantages = (tensor_value_targets - tensor_values).detach()
     all_one_hot_actions_tensor = torch.stack(all_one_hot_actions).permute((1, 0, 2))
     all_actions_probs_tensor = torch.stack(all_action_probs).permute((1, 0, 2))
+    #all_lagged_actions_probs_tensor = torch.stack(all_lagged_action_probs).permute((1, 0, 2))
     assert all_one_hot_actions_tensor.size() == all_actions_probs_tensor.size()
     taken_action_probs = (all_one_hot_actions_tensor * all_actions_probs_tensor).sum(2)
+    #taken_lagged_action_probs = (all_one_hot_actions_tensor * all_lagged_actions_probs_tensor).sum(2)
     assert taken_action_probs.size() == advantages.size()
+    #ratio = taken_action_probs / taken_lagged_action_probs
+    #surr1 = ratio * advantages
+    #eps = 0.1
+    #surr2 = torch.clamp(ratio, 1 - eps, 1 + eps) * advantages
+    #policy_loss = -torch.min(surr1, surr2).mean()
     policy_loss = torch.neg(torch.log(taken_action_probs) * advantages).mean()
 
     entropy = -(all_actions_probs_tensor * torch.log(all_actions_probs_tensor + 1e-08)).sum(2)

@@ -1,7 +1,6 @@
 import torch
 
 discount_factor = 0.99
-keep_value_ratio = 0.5
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 replay_buffer_size = 500000
 

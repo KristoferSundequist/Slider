@@ -17,7 +17,7 @@ class PolicyNetwork(nn.Module):
         self.fc3 = nn.Linear(hidden_size, action_space_size)
 
         self.apply(self.weight_init)
-        self.opt = optim.AdamW(self.parameters(), lr=globals.action_model_learning_rate, weight_decay=0.001)
+        self.opt = optim.AdamW(self.parameters(), lr=globals.action_model_learning_rate, weight_decay=0.001, eps=1e-5)
 
     def copy_weights(self, other):
         self.load_state_dict(copy.deepcopy(other.state_dict()))

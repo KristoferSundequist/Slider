@@ -177,7 +177,7 @@ def improve(observed_sequences: List[Sequence]):
             # reconstruction loss
             reconstructed_hidden_states = reconstructionNetwork.forward(hidden_states)
             assert reconstructed_hidden_states.size() == observed_states.size()
-            reconstruction_loss = 0.5 * (reconstructed_hidden_states - observed_states).pow(2).mean()
+            reconstruction_loss = 0.5 * (reconstructed_hidden_states - observed_states).pow(2).sum(1).mean()
 
             # reward loss
             predicted_rewards = rewardNetwork.forward(hidden_states)
@@ -187,8 +187,8 @@ def improve(observed_sequences: List[Sequence]):
             # transition loss
             transition_hidden_states = transitionNetwork.forward(onehot_taken_actions, hidden_states)
             assert transition_hidden_states.size() == next_hidden_states.size()
-            transition_loss = 0.5 * (transition_hidden_states - next_hidden_states.detach()).pow(2).mean()
-            representation_loss = 0.5 * (transition_hidden_states.detach() - next_hidden_states).pow(2).mean()
+            transition_loss = 0.5 * (transition_hidden_states - next_hidden_states.detach()).pow(2).sum(1).mean()
+            representation_loss = 0.5 * (transition_hidden_states.detach() - next_hidden_states).pow(2).sum(1).mean()
 
             total_reconstruction_loss += reconstruction_loss
             total_reward_loss += reward_loss

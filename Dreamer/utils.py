@@ -3,13 +3,6 @@ import globals
 from typing import List
 
 
-# initial_hidden = torch.zeros(globals.hidden_vector_size, requires_grad=True)
-
-# def init_hidden(n: int):
-# return initial_hidden.repeat(n, 1).to(globals.device)
-# return torch.zeros(n, globals.hidden_vector_size).to(globals.device)
-
-
 def calculate_value_targets_for_batch(rewards: torch.Tensor, values: torch.Tensor, lmbda: float = 0.95, discount: float = 0.99):
     targets = torch.zeros_like(values)
     targets[:, -1] = values[:, -1]

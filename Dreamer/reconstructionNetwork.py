@@ -12,13 +12,13 @@ class ReconstructionNetwork(nn.Module):
         super(ReconstructionNetwork, self).__init__()
         self.state_space_size = state_space_size
 
-        hidden_size = 256
-        self.fc1 = nn.Linear(globals.hidden_vector_size, hidden_size)
+        hidden_size = globals.mlp_size
+        self.fc1 = nn.Linear(globals.stoch_vector_size, hidden_size)
         self.fc2 = nn.Linear(hidden_size, hidden_size)
         self.fc3 = nn.Linear(hidden_size, state_space_size)
 
         self.apply(self.weight_init)
-        self.opt = optim.AdamW(self.parameters(), lr=globals.world_model_learning_rate, weight_decay=0.001)
+        self.opt = optim.AdamW(self.parameters(), lr=globals.world_model_learning_rate, weight_decay=0.001, eps=globals.world_model_adam_eps)
 
     def copy_weights(self, other):
         self.load_state_dict(copy.deepcopy(other.state_dict()))
@@ -38,7 +38,7 @@ class ReconstructionNetwork(nn.Module):
             m.weight.data.normal_(0.0, variance)
 
     def forward(self, hiddens: torch.Tensor) -> torch.Tensor:
-        assert hiddens.size()[1] == globals.hidden_vector_size
+        assert hiddens.size()[1] == globals.stoch_vector_size
         x = F.relu(self.fc1(hiddens))
         x = F.relu(self.fc2(x))
         return self.fc3(x)
@@ -46,7 +46,7 @@ class ReconstructionNetwork(nn.Module):
 
 def test_reconstuction():
     # Arrange
-    hiddens = torch.rand(2, globals.hidden_vector_size)
+    hiddens = torch.rand(2, globals.stoch_vector_size)
     reconstruction = ReconstructionNetwork(3)
 
     # Act

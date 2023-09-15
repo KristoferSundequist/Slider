@@ -11,13 +11,13 @@ class PolicyNetwork(nn.Module):
     def __init__(self, action_space_size: int):
         super(PolicyNetwork, self).__init__()
 
-        hidden_size = 256
-        self.fc1 = nn.Linear(globals.hidden_vector_size, hidden_size)
+        hidden_size = globals.mlp_size
+        self.fc1 = nn.Linear(globals.stoch_vector_size, hidden_size)
         self.fc2 = nn.Linear(hidden_size, hidden_size)
         self.fc3 = nn.Linear(hidden_size, action_space_size)
 
         self.apply(self.weight_init)
-        self.opt = optim.AdamW(self.parameters(), lr=globals.action_model_learning_rate, weight_decay=0.001, eps=1e-5)
+        self.opt = optim.AdamW(self.parameters(), lr=globals.actor_critic_learning_rate, weight_decay=0.001, eps=globals.actor_critic_adam_eps)
 
     def copy_weights(self, other):
         self.load_state_dict(copy.deepcopy(other.state_dict()))
@@ -37,7 +37,7 @@ class PolicyNetwork(nn.Module):
             m.weight.data.normal_(0.0, variance)
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        assert hidden_states.size()[1] == globals.hidden_vector_size
+        assert hidden_states.size()[1] == globals.stoch_vector_size
         x = F.relu(self.fc1(hidden_states))
         x = F.relu(self.fc2(x))
         return self.fc3(x)
@@ -45,7 +45,7 @@ class PolicyNetwork(nn.Module):
 
 def test_policy():
     # Arrange
-    hiddens = torch.rand(7, globals.hidden_vector_size)
+    hiddens = torch.rand(7, globals.stoch_vector_size)
     action_space_size = 4
     policyNetwork = PolicyNetwork(action_space_size)
 

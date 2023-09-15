@@ -8,21 +8,20 @@ from typing import *
 
 
 class RepresentationNetwork(nn.Module):
-    def __init__(self, state_space_size: int, action_space_size: int):
+    def __init__(self, state_space_size: int):
         super(RepresentationNetwork, self).__init__()
         self.state_space_size = state_space_size
-        self.action_space_size = action_space_size
 
-        hidden_size = 256
+        hidden_size = globals.mlp_size
 
-        self.fc1 = nn.Linear(state_space_size + action_space_size + globals.hidden_vector_size, hidden_size)
+        self.fc1 = nn.Linear(state_space_size + globals.recurrent_vector_size, hidden_size)
         self.fc2 = nn.Linear(hidden_size, hidden_size)
-        self.fc3 = nn.Linear(hidden_size, globals.hidden_vector_size)
+        self.fc3 = nn.Linear(hidden_size, globals.stoch_vector_size)
 
-        self.initial_hidden = nn.Parameter(torch.zeros(globals.hidden_vector_size), requires_grad=True)
+        self.initial_hidden = nn.Parameter(torch.zeros(globals.stoch_vector_size), requires_grad=True)
 
         self.apply(self.weight_init)
-        self.opt = optim.AdamW(self.parameters(), lr=globals.world_model_learning_rate, weight_decay=0.001)
+        self.opt = optim.AdamW(self.parameters(), lr=globals.world_model_learning_rate, weight_decay=0.001, eps=globals.world_model_adam_eps)
 
     def get_initial(self, n: int) -> torch.Tensor:
         return self.initial_hidden.repeat(n, 1)
@@ -44,11 +43,10 @@ class RepresentationNetwork(nn.Module):
             variance = np.sqrt(2.0 / (fan_in + fan_out))
             m.weight.data.normal_(0.0, variance)
 
-    def forward(self, states: torch.Tensor, actions: torch.Tensor, prev_hiddens: torch.Tensor) -> torch.Tensor:
+    def forward(self, states: torch.Tensor, recurrent_hiddens: torch.Tensor) -> torch.Tensor:
         assert states.size()[1] == self.state_space_size
-        assert actions.size()[1] == self.action_space_size
-        assert prev_hiddens.size()[1] == globals.hidden_vector_size
-        concatted = torch.concat([states, actions, prev_hiddens], 1)
+        assert recurrent_hiddens.size()[1] == globals.recurrent_vector_size
+        concatted = torch.concat([states, recurrent_hiddens], 1)
         x = F.relu(self.fc1(concatted))
         x = F.relu(self.fc2(x))
         return self.fc3(x)
@@ -57,12 +55,11 @@ class RepresentationNetwork(nn.Module):
 def test_representation():
     # Arrange
     states = torch.tensor([[1.0, 2, 5], [0.5, 6, 3]])
-    actions = torch.tensor([[0.0, 1, 0, 0], [0, 0, 0, 1]])
-    prev_hiddens = torch.rand(2, globals.hidden_vector_size)
-    repr = RepresentationNetwork(3, 4)
+    prev_hiddens = torch.rand(2, globals.recurrent_vector_size)
+    repr = RepresentationNetwork(3)
 
     # Act
-    result = repr.forward(states, actions, prev_hiddens)
+    result = repr.forward(states, prev_hiddens)
 
     # Assert
-    assert result.size() == (2, globals.hidden_vector_size)
+    assert result.size() == (2, globals.stoch_vector_size)

@@ -5,7 +5,7 @@ import numpy as np
 
 class Agent:
     def __init__(self, state_space_size: int, action_space_size: int):
-        self.model = LGBMRegressor(min_child_samples=2, num_leaves=5000, max_bin=1024)
+        self.model = LGBMRegressor(min_child_samples=2, num_leaves=2048, max_bin=255)
         self.state_space_size = state_space_size
         self.action_space_size = action_space_size
         self.init_fit()

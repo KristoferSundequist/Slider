@@ -66,16 +66,17 @@ running_reward_decay = 0.9
 
 
 def train(
-    n_episodes: int,
+    n_iterations: int,
+    n_epsiodes_per_iteration: int,
     episode_size: int,
     epsilon: float,
 ):
     global running_reward
 
-    for i in range(n_episodes):
-        print(f"Episode {i+1} / {n_episodes}.")
+    for i in range(n_iterations):
+        print(f"Episode {i+1} / {n_iterations}.")
         act_time_start = time.time()
-        episodes = [get_episode(episode_size, epsilon) for _ in range(4)]
+        episodes = [get_episode(episode_size, epsilon) for _ in range(n_epsiodes_per_iteration)]
 
         mean_reward = np.array([e.reward_sum for e in episodes]).mean()
         if running_reward == None:

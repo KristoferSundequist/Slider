@@ -14,7 +14,7 @@ class QNetwork(nn.Module):
         hidden_size = 512
         self.fc1 = nn.Linear(state_space_size, hidden_size)
         self.fc2 = nn.Linear(hidden_size, hidden_size)
-        self.fc3 = nn.Linear(hidden_size, action_space_size)
+        self.fc4 = nn.Linear(hidden_size, action_space_size)
 
         self.opt = optim.AdamW(self.parameters(), lr=1e-4, eps=1e-5, weight_decay=0.001)
 
@@ -39,9 +39,9 @@ class QNetwork(nn.Module):
 
     def forward(self, states: torch.Tensor) -> torch.Tensor:
         assert states.size()[1] == self.state_space_size
-        x = F.relu(self.fc1(states))
-        x = F.relu(self.fc2(x))
-        return self.fc3(x)
+        x = F.silu(self.fc1(states))
+        x = F.silu(self.fc2(x))
+        return self.fc4(x)
 
 
 def test_q_network():

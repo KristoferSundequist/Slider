@@ -12,7 +12,7 @@ class PolicyNetwork(nn.Module):
         super(PolicyNetwork, self).__init__()
 
         hidden_size = globals.mlp_size
-        self.fc1 = nn.Linear(globals.stoch_vector_size, hidden_size)
+        self.fc1 = nn.Linear(globals.stoch_vector_size + globals.recurrent_vector_size, hidden_size)
         self.fc2 = nn.Linear(hidden_size, hidden_size)
         self.fc3 = nn.Linear(hidden_size, action_space_size)
 
@@ -37,7 +37,7 @@ class PolicyNetwork(nn.Module):
             m.weight.data.normal_(0.0, variance)
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        assert hidden_states.size()[1] == globals.stoch_vector_size
+        assert hidden_states.size()[1] == globals.stoch_vector_size + globals.recurrent_vector_size
         x = F.relu(self.fc1(hidden_states))
         x = F.relu(self.fc2(x))
         return self.fc3(x)
@@ -45,7 +45,7 @@ class PolicyNetwork(nn.Module):
 
 def test_policy():
     # Arrange
-    hiddens = torch.rand(7, globals.stoch_vector_size)
+    hiddens = torch.rand(7, globals.stoch_vector_size + globals.recurrent_vector_size)
     action_space_size = 4
     policyNetwork = PolicyNetwork(action_space_size)
 

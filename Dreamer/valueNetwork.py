@@ -12,7 +12,7 @@ class ValueNetwork(nn.Module):
         super(ValueNetwork, self).__init__()
 
         hidden_size = globals.mlp_size
-        self.fc1 = nn.Linear(globals.stoch_vector_size, hidden_size)
+        self.fc1 = nn.Linear(globals.stoch_vector_size + globals.recurrent_vector_size, hidden_size)
         self.fc2 = nn.Linear(hidden_size, hidden_size)
         self.fc3 = nn.Linear(hidden_size, 1)
 
@@ -37,14 +37,14 @@ class ValueNetwork(nn.Module):
             m.weight.data.normal_(0.0, variance)
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        assert hidden_states.size()[1] == globals.stoch_vector_size
+        assert hidden_states.size()[1] == globals.stoch_vector_size + globals.recurrent_vector_size
         x = F.relu(self.fc1(hidden_states))
         x = F.relu(self.fc2(x))
         return self.fc3(x)
 
 def test_value():
     # Arrange
-    hiddens = torch.rand(7, globals.stoch_vector_size)
+    hiddens = torch.rand(7, globals.stoch_vector_size + globals.recurrent_vector_size)
     valueNetwork = ValueNetwork()
 
     # Act

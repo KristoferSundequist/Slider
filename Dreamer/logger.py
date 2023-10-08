@@ -32,7 +32,8 @@ class Logger:
             column = i % n_columns
 
             ax[row, column].plot(
-                [i for i in range(1, len(self.stuff[key]) + 1)], [number for number in self.stuff[key]][-last_n:]
+                [i for i in range(1, len(self.stuff[key]) + 1)][-last_n:],
+                [number for number in self.stuff[key]][-last_n:],
             )
             ax[row, column].set(xlabel="Tick", ylabel=key)
             ax[row, column].grid()

@@ -12,9 +12,9 @@ class RewardNetwork(nn.Module):
         super(RewardNetwork, self).__init__()
 
         hidden_size = globals.mlp_size
-        self.fc1 = nn.Linear(globals.stoch_vector_size + globals.recurrent_vector_size, hidden_size)
-        self.fc2 = nn.Linear(hidden_size, hidden_size)
-        self.fc3 = nn.Linear(hidden_size, 1)
+        self.fc1 = nn.Linear(globals.stoch_vector_size + globals.recurrent_vector_size, hidden_size, bias=False)
+        self.fc2 = nn.Linear(hidden_size, hidden_size, bias=False)
+        self.fc3 = nn.Linear(hidden_size, 1, bias=False)
 
         self.apply(self.weight_init)
         self.opt = optim.AdamW(self.parameters(), lr=globals.world_model_learning_rate, weight_decay=0.001, eps=globals.world_model_adam_eps)

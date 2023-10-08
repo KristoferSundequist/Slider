@@ -3,6 +3,10 @@ import globals
 from typing import List
 
 
+def get_average_gradient(model: torch.nn.Module) -> float:
+    grads = [param.grad.view(-1) for param in model.parameters()]
+    return torch.cat(grads).abs().mean().item()
+
 def calculate_value_targets_for_batch(rewards: torch.Tensor, values: torch.Tensor, lmbda: float = 0.95, discount: float = 0.99):
     targets = torch.zeros_like(values)
     targets[:, -1] = values[:, -1]

@@ -13,7 +13,7 @@ import globals
 import numpy as np
 from sequenceBuffer import *
 from logger import *
-from utils import calculate_value_targets_for_batch
+from utils import calculate_value_targets_for_batch, get_average_gradient
 from representationNetwork import RepresentationNetwork
 from policyNetwork import PolicyNetwork
 from reconstructionNetwork import ReconstructionNetwork
@@ -138,8 +138,8 @@ def live(iterations: int, should_improve: bool, should_render: bool, should_visu
 
         total_episode_reward += reward
 
-    logger.add_reward(total_episode_reward)
-    print(f"avg_running_reward: {logger.get_running_avg_reward()}, total_episode_reward: {total_episode_reward}")
+    logger.add("Reward", total_episode_reward)
+    print(f"avg_running_reward: {logger.get_running_avg('Reward')}, total_episode_reward: {total_episode_reward}")
 
     end = time.time()
     print("Elapsed time: ", end - start)
@@ -219,10 +219,10 @@ def improve(observed_sequences: List[Sequence]):
             saved_recurrent_states.append(recurrent_hidden_states.detach())
             saved_stoch_states.append(stoch_hidden_states.detach())
 
-    logger.add_reconstuction_loss(total_reconstruction_loss.item())
-    logger.add_reward_loss(total_reward_loss.item())
-    logger.add_transition_loss(total_transition_loss.item())
-    logger.add_representation_loss(total_representation_loss.item())
+    logger.add("Reconstruction loss", total_reconstruction_loss.item())
+    logger.add("Reward_loss", total_reward_loss.item())
+    logger.add("Transition_loss", total_transition_loss.item())
+    logger.add("Representation_loss", total_representation_loss.item())
 
     representationNetwork.opt.zero_grad()
     reconstructionNetwork.opt.zero_grad()
@@ -234,6 +234,12 @@ def improve(observed_sequences: List[Sequence]):
     total_loss.backward()
 
     max_norm_clip = 100
+    logger.add("Avg representation grad", get_average_gradient(representationNetwork))
+    logger.add("Avg reconstruction grad", get_average_gradient(reconstructionNetwork))
+    logger.add("Avg reward grad", get_average_gradient(rewardNetwork))
+    logger.add("Avg transition grad", get_average_gradient(transitionNetwork))
+    logger.add("Avg recurrent grad", get_average_gradient(recurrentNetwork))
+
     nn.utils.clip_grad.clip_grad_value_(representationNetwork.parameters(), max_norm_clip)
     nn.utils.clip_grad.clip_grad_value_(reconstructionNetwork.parameters(), max_norm_clip)
     nn.utils.clip_grad.clip_grad_value_(rewardNetwork.parameters(), max_norm_clip)
@@ -285,6 +291,7 @@ def improve_behaviour(recurrent_states: torch.Tensor, stoch_states: torch.Tensor
         all_rewards.append(rewards)
 
     tensor_values = torch.stack(all_values).T.to(globals.device)
+    logger.add("Avg predicted values when training", tensor_values.mean().item())
     tensor_lagged_values = torch.stack(all_lagged_values).T.to(globals.device)
     tensor_rewards = torch.tensor(all_rewards).T.to(globals.device)
 
@@ -312,15 +319,18 @@ def improve_behaviour(recurrent_states: torch.Tensor, stoch_states: torch.Tensor
     # entropy loss
     entropy_loss = -OneHotCategorical(logits=all_actions_logits_tensor).entropy().mean()
 
-    logger.add_value_loss(value_loss.item())
-    logger.add_policy_loss(policy_loss.item())
-    logger.add_entropy_loss(entropy_loss.item())
+    logger.add("Value_loss", value_loss.item())
+    logger.add("Policy_loss", policy_loss.item())
+    logger.add("Entropy_loss", entropy_loss.item())
 
     valueNetwork.opt.zero_grad()
     policyNetwork.opt.zero_grad()
 
     value_loss.backward()
     (policy_loss + globals.entropy_coeff * entropy_loss).backward()
+
+    logger.add("Avg value grad", get_average_gradient(valueNetwork))
+    logger.add("Avg policy grad", get_average_gradient(policyNetwork))
 
     max_norm_clip = 100
     nn.utils.clip_grad.clip_grad_value_(valueNetwork.parameters(), max_norm_clip)

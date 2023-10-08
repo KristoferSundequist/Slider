@@ -12,11 +12,11 @@ class QNetwork(nn.Module):
         self.action_space_size = action_space_size
 
         hidden_size = 512
-        self.fc1 = nn.Linear(state_space_size + action_space_size, hidden_size)
-        self.fc2 = nn.Linear(hidden_size, hidden_size)
-        self.fc4 = nn.Linear(hidden_size, 1)
+        self.fc1 = nn.Linear(state_space_size + action_space_size, hidden_size, bias=False)
+        self.fc2 = nn.Linear(hidden_size, hidden_size, bias=False)
+        self.fc4 = nn.Linear(hidden_size, 1, bias=False)
 
-        self.opt = optim.AdamW(self.parameters(), lr=1e-4, eps=1e-5, weight_decay=0.001)
+        self.opt = optim.Adam(self.parameters(), lr=1e-4, eps=1e-5)
 
         self.apply(self.weight_init)
 

@@ -11,16 +11,17 @@ class TheNetwork(nn.Module):
         self.state_space_size = state_space_size
         self.action_space_size = action_space_size
 
-        hidden_size = 512
-        self.value_1 = nn.Linear(state_space_size, hidden_size, bias=False)
-        self.value_2 = nn.Linear(hidden_size, hidden_size, bias=False)
-        self.value_out = nn.Linear(hidden_size, 1, bias=False)
+        value_hidden_size = 512
+        self.value_1 = nn.Linear(state_space_size, value_hidden_size, bias=False)
+        self.value_2 = nn.Linear(value_hidden_size, value_hidden_size, bias=False)
+        self.value_out = nn.Linear(value_hidden_size, 1, bias=False)
 
-        self.action_1 = nn.Linear(state_space_size, hidden_size, bias=False)
-        self.action_2 = nn.Linear(hidden_size, hidden_size, bias=False)
-        self.action_out = nn.Linear(hidden_size, action_space_size * 2, bias=False)
+        action_hidden_size = 256
+        self.action_1 = nn.Linear(state_space_size, action_hidden_size, bias=False)
+        self.action_2 = nn.Linear(action_hidden_size, action_hidden_size, bias=False)
+        self.action_out = nn.Linear(action_hidden_size, action_space_size * 2, bias=False)
 
-        self.opt = optim.AdamW(self.parameters(), lr=1e-4, eps=1e-5, weight_decay=0.001)
+        self.opt = optim.Adam(self.parameters(), lr=3e-4, eps=1e-5)
 
         self.apply(self.weight_init)
 

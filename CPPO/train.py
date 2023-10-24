@@ -5,7 +5,7 @@ import torch
 import time
 import copy
 from multiprocessing import Pool, cpu_count
-from slider import *
+from slider import GameTwo, Game
 from torch.utils.data.sampler import BatchSampler, SubsetRandomSampler
 from torch.distributions import Normal, Independent
 import random
@@ -19,7 +19,9 @@ ncpus = cpu_count()
 width = 800
 height = 700
 
-agent = TheNetwork(Game.state_space_size, Game.action_space_size)
+the_game = Game
+
+agent = TheNetwork(the_game.state_space_size, the_game.action_space_size)
 
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
@@ -28,7 +30,7 @@ print("DEVICE:", device)
 
 def get_episode(num_iterations: int):
     with torch.no_grad():
-        game = Game(width, height)
+        game = the_game(width, height)
 
         all_states = []
         all_taken_actions = []
@@ -41,7 +43,7 @@ def get_episode(num_iterations: int):
 
         for i in range(num_iterations):
             current_values, action_means, action_stds = agent.forward(torch.tensor([current_state]))
-            action = Normal(action_means, F.softplus(action_stds)).sample().tolist()[0]
+            action = Normal(action_means, F.softplus(action_stds) + 0.001).sample().tolist()[0]
 
             reward, next_state = game.step(action)
 
@@ -94,7 +96,7 @@ def train(
         )
 
         train_train_start = time.time()
-        arranged_data = arrange_data(episodes, Game.state_space_size, Game.action_space_size)
+        arranged_data = arrange_data(episodes, the_game.state_space_size, the_game.action_space_size)
         pvo(arranged_data)
 
         print("Train time elapsed: ", time.time() - train_train_start)
@@ -172,7 +174,7 @@ def agent_loop(iterations, std_coef: float):
         win = graphics.GraphWin("canvas", width, height)
         win.setBackground("lightskyblue")
 
-        game = Game(width, height)
+        game = the_game(width, height)
         import time
 
         for i in range(iterations):

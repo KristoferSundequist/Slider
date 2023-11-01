@@ -5,11 +5,13 @@ import numpy as np
 import copy
 import globals
 from typing import *
+from utils import get_average_gradient
 
 
 class PolicyNetwork(nn.Module):
-    def __init__(self, action_space_size: int):
+    def __init__(self, action_space_size: int, logger):
         super(PolicyNetwork, self).__init__()
+        self.logger = logger
 
         hidden_size = globals.mlp_size
         self.fc1 = nn.Linear(globals.stoch_vector_size + globals.recurrent_vector_size, hidden_size)
@@ -41,13 +43,21 @@ class PolicyNetwork(nn.Module):
         x = F.relu(self.fc1(hidden_states))
         x = F.relu(self.fc2(x))
         return self.fc3(x)
+    
+    def update(self, loss: torch.Tensor):
+        self.opt.zero_grad()
+        loss.backward()
+        self.logger.add("Avg policy grad", get_average_gradient(self))
+        max_norm_clip = 100
+        nn.utils.clip_grad.clip_grad_value_(self.parameters(), max_norm_clip)
+        self.opt.step()
 
 
 def test_policy():
     # Arrange
     hiddens = torch.rand(7, globals.stoch_vector_size + globals.recurrent_vector_size)
     action_space_size = 4
-    policyNetwork = PolicyNetwork(action_space_size)
+    policyNetwork = PolicyNetwork(action_space_size, None)
 
     # Act
     logits = policyNetwork.forward(hiddens)

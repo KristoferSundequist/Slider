@@ -19,6 +19,7 @@ imagination_horizon=15
 entropy_coeff = 0.005
 
 update_frequency = 20
+target_network_gradient_steps = 100
 
 width = 700
 height = 700

@@ -13,27 +13,27 @@ import globals
 import numpy as np
 from sequenceBuffer import *
 from logger import *
-from utils import calculate_value_targets_for_batch, get_average_gradient
+from utils import calculate_value_targets_for_batch, get_average_gradient, combine_states
 from representationNetwork import RepresentationNetwork
 from policyNetwork import PolicyNetwork
 from reconstructionNetwork import ReconstructionNetwork
 from rewardNetwork import RewardNetwork
 from transitionNetwork import TransitionNetwork
-from valueNetwork import ValueNetwork
+from valueNetwork import ValueHandler
 from recurrentNetwork import RecurrentnNetwork
 from torch.distributions import Categorical, OneHotCategorical
 
+logger = Logger()
 # game = slider.GameWithoutSpeed
 # game = simple_slider.Game
 game = slider.Game
 
 representationNetwork = RepresentationNetwork(game.state_space_size).to(globals.device)
-policyNetwork = PolicyNetwork(game.action_space_size).to(globals.device)
+policyNetwork = PolicyNetwork(game.action_space_size, logger).to(globals.device)
 reconstructionNetwork = ReconstructionNetwork(game.state_space_size).to(globals.device)
 rewardNetwork = RewardNetwork().to(globals.device)
 transitionNetwork = TransitionNetwork().to(globals.device)
-valueNetwork = ValueNetwork().to(globals.device)
-targetValueNetwork = copy.deepcopy(valueNetwork)
+valueHandler = ValueHandler(logger)
 recurrentNetwork = RecurrentnNetwork(game.action_space_size).to(globals.device)
 
 replay_buffer = ReplayBuffer(globals.replay_buffer_size)
@@ -42,16 +42,8 @@ replay_buffer = ReplayBuffer(globals.replay_buffer_size)
 # export OMP_NUM_THREADS=1
 
 
-logger = Logger()
-
-
-def combine_states(stoch_states: torch.Tensor, recurrent_states: torch.Tensor) -> torch.Tensor:
-    return torch.concat([stoch_states, recurrent_states], 1)
-
 
 def live(iterations: int, should_improve: bool, should_render: bool, should_visualize_reconstruction: bool):
-    global targetValueNetwork
-
     win: GraphWin | None = None
     if should_render:
         win = GraphWin("Real game", globals.width, globals.height)
@@ -90,10 +82,10 @@ def live(iterations: int, should_improve: bool, should_render: bool, should_visu
             action = Categorical(logits=policyNetwork.forward(combined_hidden)).sample().item()
             if should_render:
                 reward_belief = rewardNetwork.forward(combined_hidden).squeeze()
-                value = valueNetwork.forward(combined_hidden).squeeze()
+                value = valueHandler.forward(combined_hidden).squeeze()
 
         if should_render:
-            g.render(round(value.item(), 2), round(reward_belief.item(), 2), win)
+            g.render(round(value.item(), 4), round(reward_belief.item(), 4), win)
 
         if should_visualize_reconstruction:
             with torch.no_grad():
@@ -114,11 +106,11 @@ def live(iterations: int, should_improve: bool, should_render: bool, should_visu
                     reconstructed_state_from_transition = (
                         reconstructionNetwork.forward(combined_transition_hidden).squeeze().tolist()
                     )
-                    transition_value = valueNetwork.forward(combined_transition_hidden)
+                    transition_value = valueHandler.forward(combined_transition_hidden)
                     transition_reward = rewardNetwork.forward(combined_transition_hidden)
                     transition_game.set_game_state(reconstructed_state_from_transition)
                     transition_game.render(
-                        round(transition_value.item(), 2), round(transition_reward.item(), 2), transition_win
+                        round(transition_value.item(), 4), round(transition_reward.item(), 4), transition_win
                     )
                     time.sleep(0.01)
 
@@ -133,8 +125,6 @@ def live(iterations: int, should_improve: bool, should_render: bool, should_visu
 
         if i != 0 and len(replay_buffer) > 1000 and should_improve and i % globals.update_frequency == 0:
             improve(replay_buffer.sample(globals.batch_size))
-            if i % (globals.update_frequency * 200) == 0:
-                targetValueNetwork = copy.deepcopy(valueNetwork)
 
         total_episode_reward += reward
 
@@ -153,18 +143,14 @@ def live(iterations: int, should_improve: bool, should_render: bool, should_visu
         transition_win.close()
 
 
-def improve(observed_sequences: List[Sequence]):
-    total_reconstruction_loss: torch.Tensor = torch.tensor(0.0).to(globals.device)
-    total_reward_loss: torch.Tensor = torch.tensor(0.0).to(globals.device)
-    total_transition_loss: torch.Tensor = torch.tensor(0.0).to(globals.device)
-    total_representation_loss: torch.Tensor = torch.tensor(0.0).to(globals.device)
-
+def roll_rssm_forward(observed_sequences: List[Sequence]):
     saved_recurrent_states = []
     saved_stoch_states = []
+    saved_observed_states = []
+    saved_observed_rewards = []
 
     stoch_hidden_states = representationNetwork.get_initial(len(observed_sequences))
     recurrent_hidden_states = recurrentNetwork.get_initial(len(observed_sequences))
-    combined_states = combine_states(stoch_hidden_states, recurrent_hidden_states)
 
     for i in range(globals.sequence_length):
         # prepare observed stuff
@@ -182,64 +168,86 @@ def improve(observed_sequences: List[Sequence]):
             torch.tensor([[observation.rewards[i]] for observation in observed_sequences]).float().to(globals.device)
         )
 
-        # get next hidden states
-        next_recurrent_states = recurrentNetwork.forward(
+        # get next states
+        recurrent_hidden_states = recurrentNetwork.forward(
             onehot_taken_actions, stoch_hidden_states, recurrent_hidden_states
         )
-        next_stoch_states = representationNetwork.forward(observed_states, next_recurrent_states)
+        stoch_hidden_states = representationNetwork.forward(observed_states, recurrent_hidden_states) + torch.normal(
+            torch.zeros_like(stoch_hidden_states), 0.01
+        )
 
-        # calculate losses
-        if i > 0:
-            # reconstruction loss
-            reconstructed_hidden_states = reconstructionNetwork.forward(combined_states)
-            assert reconstructed_hidden_states.size() == observed_states.size()
-            reconstruction_loss = 0.5 * (reconstructed_hidden_states - observed_states).pow(2).sum(1).mean()
+        saved_recurrent_states.append(recurrent_hidden_states)
+        saved_stoch_states.append(stoch_hidden_states)
+        saved_observed_states.append(observed_states)
+        saved_observed_rewards.append(observed_rewards)
 
-            # reward loss
-            predicted_rewards = rewardNetwork.forward(combined_states)
-            assert predicted_rewards.size() == observed_rewards.size()
-            reward_loss = 0.5 * (predicted_rewards - observed_rewards).pow(2).mean()
+    return (
+        torch.concat(saved_recurrent_states, 0),
+        torch.concat(saved_stoch_states, 0),
+        torch.concat(saved_observed_states, 0),
+        torch.concat(saved_observed_rewards, 0),
+    )
 
-            # transition loss
-            next_transition_stoch_states = transitionNetwork.forward(next_recurrent_states)
-            assert next_transition_stoch_states.size() == next_stoch_states.size()
-            transition_loss = 0.5 * (next_transition_stoch_states - next_stoch_states.detach()).pow(2).sum(1).mean()
-            representation_loss = 0.5 * (next_transition_stoch_states.detach() - next_stoch_states).pow(2).sum(1).mean()
 
-            total_reconstruction_loss += reconstruction_loss
-            total_reward_loss += reward_loss
-            total_transition_loss += 0.5 * transition_loss
-            total_representation_loss += 0.1 * representation_loss
+def calculate_representation_losses(
+    recurrent_rollouts: torch.Tensor,
+    stoch_rollouts: torch.Tensor,
+    observed_states: torch.Tensor,
+    observed_rewards: torch.Tensor,
+):
+    combined_rollouts = combine_states(stoch_rollouts, recurrent_rollouts)
 
-        recurrent_hidden_states = next_recurrent_states
-        stoch_hidden_states = next_stoch_states + torch.normal(torch.zeros_like(next_stoch_states), 0.01)
-        combined_states = combine_states(stoch_hidden_states, recurrent_hidden_states)
+    # reconstruction loss
+    reconstructed_hidden_states = reconstructionNetwork.forward(combined_rollouts)
+    assert (
+        reconstructed_hidden_states.size() == observed_states.size()
+    ), f"{reconstructed_hidden_states.size()} == {observed_states.size()}"
+    reconstruction_loss = 0.5 * (reconstructed_hidden_states - observed_states).pow(2).sum(1).mean()
 
-        if i % 2 == 0:
-            saved_recurrent_states.append(recurrent_hidden_states.detach())
-            saved_stoch_states.append(stoch_hidden_states.detach())
+    # reward loss
+    predicted_rewards = rewardNetwork.forward(combined_rollouts)
+    assert (
+        predicted_rewards.size() == observed_rewards.size()
+    ), f"{predicted_rewards.size()} == {observed_rewards.size()}"
+    reward_loss = 0.5 * (predicted_rewards - observed_rewards).pow(2).mean()
 
-    logger.add("Reconstruction loss", total_reconstruction_loss.item())
-    logger.add("Reward_loss", total_reward_loss.item())
-    logger.add("Transition_loss", total_transition_loss.item())
-    logger.add("Representation_loss", total_representation_loss.item())
+    # transition loss
+    transition_stoch_states = transitionNetwork.forward(recurrent_rollouts)
+    assert (
+        transition_stoch_states.size() == stoch_rollouts.size()
+    ), f"{transition_stoch_states.size()} == {stoch_rollouts.size()}"
+    transition_loss = 0.5 * (transition_stoch_states - stoch_rollouts.detach()).pow(2).sum(1).mean()
+    representation_loss = 0.5 * (transition_stoch_states.detach() - stoch_rollouts).pow(2).sum(1).mean()
 
+    scaled_reconstruction_loss = reconstruction_loss
+    scaled_reward_loss = reward_loss
+    scaled_transition_loss = 0.5 * transition_loss
+    scaled_representation_loss = 0.1 * representation_loss
+
+    logger.add("Reconstruction loss", scaled_reconstruction_loss.item())
+    logger.add("Reward_loss", scaled_reward_loss.item())
+    logger.add("Transition_loss", scaled_transition_loss.item())
+    logger.add("Representation_loss", scaled_representation_loss.item())
+
+    return scaled_reconstruction_loss + scaled_reward_loss + scaled_transition_loss + scaled_representation_loss
+
+
+def update_repr(repr_loss: torch.Tensor):
     representationNetwork.opt.zero_grad()
     reconstructionNetwork.opt.zero_grad()
     rewardNetwork.opt.zero_grad()
     transitionNetwork.opt.zero_grad()
     recurrentNetwork.opt.zero_grad()
 
-    total_loss = total_reconstruction_loss + total_reward_loss + total_transition_loss + total_representation_loss
-    total_loss.backward()
+    repr_loss.backward()
 
-    max_norm_clip = 100
     logger.add("Avg representation grad", get_average_gradient(representationNetwork))
     logger.add("Avg reconstruction grad", get_average_gradient(reconstructionNetwork))
     logger.add("Avg reward grad", get_average_gradient(rewardNetwork))
     logger.add("Avg transition grad", get_average_gradient(transitionNetwork))
     logger.add("Avg recurrent grad", get_average_gradient(recurrentNetwork))
 
+    max_norm_clip = 100
     nn.utils.clip_grad.clip_grad_value_(representationNetwork.parameters(), max_norm_clip)
     nn.utils.clip_grad.clip_grad_value_(reconstructionNetwork.parameters(), max_norm_clip)
     nn.utils.clip_grad.clip_grad_value_(rewardNetwork.parameters(), max_norm_clip)
@@ -252,93 +260,81 @@ def improve(observed_sequences: List[Sequence]):
     transitionNetwork.opt.step()
     recurrentNetwork.opt.step()
 
-    # BEHAVIOIR LEARNING
 
-    saved_recurrent_states_tensor = torch.concat(saved_recurrent_states, 0)
-    saved_stoch_states_tensor = torch.concat(saved_stoch_states, 0)
-    improve_behaviour(saved_recurrent_states_tensor, saved_stoch_states_tensor)
+def improve(observed_sequences: List[Sequence]):
+    recurrent_rollouts, stoch_rollouts, observed_states, observed_rewards = roll_rssm_forward(observed_sequences)
+    repr_loss = calculate_representation_losses(recurrent_rollouts, stoch_rollouts, observed_states, observed_rewards)
+    update_repr(repr_loss)
+    improve_behaviour(recurrent_rollouts.detach(), stoch_rollouts.detach())
 
 
-def improve_behaviour(recurrent_states: torch.Tensor, stoch_states: torch.Tensor):
-    # Imagine forward and store actions and values
+def roll_imagination_forward(recurrent_states: torch.Tensor, stoch_states: torch.Tensor):
     recurrent_states = recurrent_states.detach()
     stoch_states = stoch_states.detach()
     combined_states = combine_states(stoch_states, recurrent_states)
 
-    all_one_hot_actions = []
-    all_action_logits = []
-    all_values = []
-    all_lagged_values = []
-    all_rewards: List[List[float]] = []
+    saved_combined_states = []
+    saved_one_hot_actions = []
+    saved_policy_logits = []
 
     for i in range(globals.imagination_horizon):
-        values = valueNetwork.forward(combined_states).squeeze()
         policy_dist = OneHotCategorical(logits=policyNetwork.forward(combined_states))
-        policy_logits = policy_dist.logits
         one_hot_actions = policy_dist.sample().float()
+        
+        saved_combined_states.append(combined_states)
+        saved_one_hot_actions.append(one_hot_actions)
+        saved_policy_logits.append(policy_dist.logits)
+        
         with torch.no_grad():
-            lagged_value_targets = targetValueNetwork.forward(combined_states).squeeze()
-            rewards = rewardNetwork.forward(combined_states).squeeze().tolist()
             recurrent_states = recurrentNetwork.forward(one_hot_actions, stoch_states, recurrent_states)
-            new_stoch_states = transitionNetwork.forward(recurrent_states)
-            stoch_states = new_stoch_states + torch.normal(torch.zeros_like(new_stoch_states), 0.01)
+            stoch_states = transitionNetwork.forward(recurrent_states) + torch.normal(torch.zeros_like(stoch_states), 0.01)
             combined_states = combine_states(stoch_states, recurrent_states)
 
-        all_values.append(values)
-        all_lagged_values.append(lagged_value_targets)
-        all_action_logits.append(policy_logits)
-        all_one_hot_actions.append(one_hot_actions)
-        all_rewards.append(rewards)
+    # return [Batch, sequence, dim]
+    return torch.stack(saved_combined_states, 0).permute(1,0,2), torch.stack(saved_one_hot_actions, 0).permute(1,0,2), torch.stack(saved_policy_logits, 0).permute(1,0,2)
 
-    tensor_values = torch.stack(all_values).T.to(globals.device)
-    logger.add("Avg predicted values when training", tensor_values.mean().item())
-    tensor_lagged_values = torch.stack(all_lagged_values).T.to(globals.device)
-    tensor_rewards = torch.tensor(all_rewards).T.to(globals.device)
-
-    # Calculate returns
-    tensor_value_targets = calculate_value_targets_for_batch(tensor_rewards, tensor_lagged_values)
-    assert tensor_value_targets.size()[1] == globals.imagination_horizon
-    # assert tensor_value_targets.size() == (globals.sequence_length * globals.batch_size, globals.imagination_horizon)
-
-    # Calculate value losses
-    assert tensor_value_targets.size() == tensor_values.size()
-    value_loss1 = 0.5 * (tensor_value_targets - tensor_values).pow(2)
-    clipped = tensor_lagged_values + torch.clamp(tensor_values - tensor_lagged_values, -0.3, 0.3)
-    value_loss2 = 0.5 * (clipped - tensor_value_targets).pow(2)
+def calculate_value_loss(values: torch.Tensor, lagged_values: torch.Tensor, value_targets: torch.Tensor) -> torch.Tensor:
+    assert value_targets.size() == values.size()
+    value_loss1 = 0.5 * (value_targets - values).pow(2)
+    clipped = lagged_values + torch.clamp(values - lagged_values, -0.3, 0.3)
+    value_loss2 = 0.5 * (clipped - value_targets).pow(2)
     value_loss = torch.max(value_loss1, value_loss2).mean()
+    logger.add("Value_loss", value_loss.item())
+    return value_loss
 
-    # Calculate policy losses
-    advantages = (tensor_value_targets - tensor_values).detach()
-    all_one_hot_actions_tensor = torch.stack(all_one_hot_actions).permute((1, 0, 2))
-    all_actions_logits_tensor = torch.stack(all_action_logits).permute((1, 0, 2))
-    assert all_one_hot_actions_tensor.size() == all_actions_logits_tensor.size()
-    taken_action_logits = (all_one_hot_actions_tensor * all_actions_logits_tensor).sum(2)
+def calculate_policy_loss(values: torch.Tensor, value_targets: torch.Tensor, one_hot_actions: torch.Tensor, policy_logits: torch.Tensor):
+    # Policy loss
+    advantages = (value_targets - values).detach()
+    assert one_hot_actions.size() == policy_logits.size()
+    taken_action_logits = (one_hot_actions * policy_logits).sum(2)
     assert taken_action_logits.size() == advantages.size()
     policy_loss = torch.neg(taken_action_logits * advantages).mean()
 
     # entropy loss
-    entropy_loss = -OneHotCategorical(logits=all_actions_logits_tensor).entropy().mean()
+    entropy_loss = -OneHotCategorical(logits=policy_logits).entropy().mean()
+    scaled_entropy_loss = globals.entropy_coeff * entropy_loss
 
-    logger.add("Value_loss", value_loss.item())
     logger.add("Policy_loss", policy_loss.item())
-    logger.add("Entropy_loss", entropy_loss.item())
+    logger.add("Entropy_loss", scaled_entropy_loss.item())
 
-    valueNetwork.opt.zero_grad()
-    policyNetwork.opt.zero_grad()
+    return policy_loss + scaled_entropy_loss
 
-    value_loss.backward()
-    (policy_loss + globals.entropy_coeff * entropy_loss).backward()
+def improve_behaviour(recurrent_states: torch.Tensor, stoch_states: torch.Tensor):
+    combined_states, one_hot_actions, policy_logits = roll_imagination_forward(recurrent_states, stoch_states)
+    values = valueHandler.forward(combined_states).squeeze()
+    with torch.no_grad():
+        lagged_values = valueHandler.forward_lagged(combined_states).squeeze()
+        rewards = rewardNetwork.forward(combined_states).squeeze()
+    
+    # Calculate returns
+    value_targets = calculate_value_targets_for_batch(rewards, lagged_values)
+    assert value_targets.size()[1] == globals.imagination_horizon
 
-    logger.add("Avg value grad", get_average_gradient(valueNetwork))
-    logger.add("Avg policy grad", get_average_gradient(policyNetwork))
+    value_loss = calculate_value_loss(values, lagged_values, value_targets)
+    policy_loss = calculate_policy_loss(values, value_targets, one_hot_actions, policy_logits)
 
-    max_norm_clip = 100
-    nn.utils.clip_grad.clip_grad_value_(valueNetwork.parameters(), max_norm_clip)
-    nn.utils.clip_grad.clip_grad_value_(policyNetwork.parameters(), max_norm_clip)
-
-    policyNetwork.opt.step()
-    valueNetwork.opt.step()
-
+    valueHandler.update(value_loss)
+    policyNetwork.update(policy_loss)
 
 def live_loop(lives, iterations):
     for i in range(lives):

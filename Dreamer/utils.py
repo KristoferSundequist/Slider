@@ -2,6 +2,8 @@ import torch
 import globals
 from typing import List
 
+def combine_states(stoch_states: torch.Tensor, recurrent_states: torch.Tensor) -> torch.Tensor:
+    return torch.concat([stoch_states, recurrent_states], 1)
 
 def get_average_gradient(model: torch.nn.Module) -> float:
     grads = [param.grad.view(-1) for param in model.parameters()]

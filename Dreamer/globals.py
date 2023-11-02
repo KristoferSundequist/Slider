@@ -13,8 +13,8 @@ mlp_size = 256
 stoch_vector_size = 255
 recurrent_vector_size = 256
 
-sequence_length = 64
-batch_size = 16
+sequence_length = 31
+batch_size = 32
 imagination_horizon=15
 entropy_coeff = 0.005
 

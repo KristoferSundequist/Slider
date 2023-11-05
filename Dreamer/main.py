@@ -42,7 +42,6 @@ replay_buffer = ReplayBuffer(globals.replay_buffer_size)
 # export OMP_NUM_THREADS=1
 
 
-
 def live(iterations: int, should_improve: bool, should_render: bool, should_visualize_reconstruction: bool):
     win: GraphWin | None = None
     if should_render:
@@ -124,7 +123,8 @@ def live(iterations: int, should_improve: bool, should_render: bool, should_visu
             replay_buffer.push(sequenceBuffer.get())
 
         if i != 0 and len(replay_buffer) > 1000 and should_improve and i % globals.update_frequency == 0:
-            improve(replay_buffer.sample(globals.batch_size))
+            recurrent_rollouts, stoch_rollouts = improve_rssm(replay_buffer.sample(globals.batch_size))
+            improve_behaviour(recurrent_rollouts, stoch_rollouts)
 
         total_episode_reward += reward
 
@@ -261,11 +261,11 @@ def update_repr(repr_loss: torch.Tensor):
     recurrentNetwork.opt.step()
 
 
-def improve(observed_sequences: List[Sequence]):
+def improve_rssm(observed_sequences: List[Sequence]):
     recurrent_rollouts, stoch_rollouts, observed_states, observed_rewards = roll_rssm_forward(observed_sequences)
     repr_loss = calculate_representation_losses(recurrent_rollouts, stoch_rollouts, observed_states, observed_rewards)
     update_repr(repr_loss)
-    improve_behaviour(recurrent_rollouts.detach(), stoch_rollouts.detach())
+    return recurrent_rollouts.detach(), stoch_rollouts.detach()
 
 
 def roll_imagination_forward(recurrent_states: torch.Tensor, stoch_states: torch.Tensor):
@@ -280,20 +280,29 @@ def roll_imagination_forward(recurrent_states: torch.Tensor, stoch_states: torch
     for i in range(globals.imagination_horizon):
         policy_dist = OneHotCategorical(logits=policyNetwork.forward(combined_states))
         one_hot_actions = policy_dist.sample().float()
-        
+
         saved_combined_states.append(combined_states)
         saved_one_hot_actions.append(one_hot_actions)
         saved_policy_logits.append(policy_dist.logits)
-        
+
         with torch.no_grad():
             recurrent_states = recurrentNetwork.forward(one_hot_actions, stoch_states, recurrent_states)
-            stoch_states = transitionNetwork.forward(recurrent_states) + torch.normal(torch.zeros_like(stoch_states), 0.01)
+            stoch_states = transitionNetwork.forward(recurrent_states) + torch.normal(
+                torch.zeros_like(stoch_states), 0.01
+            )
             combined_states = combine_states(stoch_states, recurrent_states)
 
     # return [Batch, sequence, dim]
-    return torch.stack(saved_combined_states, 0).permute(1,0,2), torch.stack(saved_one_hot_actions, 0).permute(1,0,2), torch.stack(saved_policy_logits, 0).permute(1,0,2)
+    return (
+        torch.stack(saved_combined_states, 0).permute(1, 0, 2),
+        torch.stack(saved_one_hot_actions, 0).permute(1, 0, 2),
+        torch.stack(saved_policy_logits, 0).permute(1, 0, 2),
+    )
 
-def calculate_value_loss(values: torch.Tensor, lagged_values: torch.Tensor, value_targets: torch.Tensor) -> torch.Tensor:
+
+def calculate_value_loss(
+    values: torch.Tensor, lagged_values: torch.Tensor, value_targets: torch.Tensor
+) -> torch.Tensor:
     assert value_targets.size() == values.size()
     value_loss1 = 0.5 * (value_targets - values).pow(2)
     clipped = lagged_values + torch.clamp(values - lagged_values, -0.3, 0.3)
@@ -302,7 +311,10 @@ def calculate_value_loss(values: torch.Tensor, lagged_values: torch.Tensor, valu
     logger.add("Value_loss", value_loss.item())
     return value_loss
 
-def calculate_policy_loss(values: torch.Tensor, value_targets: torch.Tensor, one_hot_actions: torch.Tensor, policy_logits: torch.Tensor):
+
+def calculate_policy_loss(
+    values: torch.Tensor, value_targets: torch.Tensor, one_hot_actions: torch.Tensor, policy_logits: torch.Tensor
+):
     # Policy loss
     advantages = (value_targets - values).detach()
     assert one_hot_actions.size() == policy_logits.size()
@@ -319,13 +331,14 @@ def calculate_policy_loss(values: torch.Tensor, value_targets: torch.Tensor, one
 
     return policy_loss + scaled_entropy_loss
 
+
 def improve_behaviour(recurrent_states: torch.Tensor, stoch_states: torch.Tensor):
     combined_states, one_hot_actions, policy_logits = roll_imagination_forward(recurrent_states, stoch_states)
     values = valueHandler.forward(combined_states).squeeze()
     with torch.no_grad():
         lagged_values = valueHandler.forward_lagged(combined_states).squeeze()
         rewards = rewardNetwork.forward(combined_states).squeeze()
-    
+
     # Calculate returns
     value_targets = calculate_value_targets_for_batch(rewards, lagged_values)
     assert value_targets.size()[1] == globals.imagination_horizon
@@ -336,13 +349,21 @@ def improve_behaviour(recurrent_states: torch.Tensor, stoch_states: torch.Tensor
     valueHandler.update(value_loss)
     policyNetwork.update(policy_loss)
 
+
 def live_loop(lives, iterations):
     for i in range(lives):
         print(f"Iteration: {i} of {lives}")
         live(iterations, True, False, False)
 
 
-def init(lives, iterations):
+def train_rssm(n_batches: int):
+    for i in range(n_batches):
+        if i % (n_batches / 10) == 0:
+            print(f"init training batch {i} of {n_batches}")
+        improve_rssm(replay_buffer.sample(globals.batch_size))
+
+def init(lives: int, iterations: int):
     for i in range(lives):
-        print(f"Init: {i} of {lives}")
         live(iterations, False, False, False)
+
+    train_rssm(round((lives * iterations) / globals.batch_size) * 2)

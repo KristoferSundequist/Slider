@@ -14,7 +14,7 @@ stoch_vector_size = 255
 recurrent_vector_size = 256
 
 sequence_length = 31
-batch_size = 32
+batch_size = 48
 imagination_horizon=15
 entropy_coeff = 0.005
 

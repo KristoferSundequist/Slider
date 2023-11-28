@@ -21,7 +21,7 @@ from rewardNetwork import RewardNetwork
 from transitionNetwork import TransitionNetwork
 from valueNetwork import ValueHandler
 from recurrentNetwork import RecurrentnNetwork
-from torch.distributions import Categorical, OneHotCategorical
+from torch.distributions import Categorical, OneHotCategorical, OneHotCategoricalStraightThrough
 
 logger = Logger()
 # game = slider.GameWithoutSpeed
@@ -278,8 +278,8 @@ def roll_imagination_forward(recurrent_states: torch.Tensor, stoch_states: torch
     saved_policy_logits = []
 
     for i in range(globals.imagination_horizon):
-        policy_dist = OneHotCategorical(logits=policyNetwork.forward(combined_states))
-        one_hot_actions = policy_dist.sample().float()
+        policy_dist = OneHotCategoricalStraightThrough(logits=policyNetwork.forward(combined_states))
+        one_hot_actions = policy_dist.rsample()
 
         saved_combined_states.append(combined_states)
         saved_one_hot_actions.append(one_hot_actions)

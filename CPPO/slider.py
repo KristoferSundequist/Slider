@@ -30,8 +30,9 @@ class Slider:
     # 0   2
     #   3
     def push(self, direction: List[float]):
-        self.dx += direction[0]
-        self.dy += direction[1]
+        direction_normalizer = max(sum(direction), 1.0)
+        self.dx += direction[0] / direction_normalizer
+        self.dy += direction[1] / direction_normalizer
 
         if self.dx > 10:
             self.dx = 10

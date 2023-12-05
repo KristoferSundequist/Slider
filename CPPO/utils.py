@@ -4,31 +4,6 @@ import torch
 import torch.nn.functional as F
 from dataclasses import dataclass
 
-# CALCULATE RETURNS
-
-
-def calculate_value_targets(rewards: List[float], values: List[float], discount_factor: float, lambd: float):
-    targets = [0.0 for _ in range(len(rewards))]
-    targets[-1] = values[-1]
-
-    for i in reversed(range(len(values) - 1)):
-        bootstrap = (1.0 - lambd) * values[i + 1] + lambd * targets[i + 1]
-        targets[i] = rewards[i] + discount_factor * bootstrap
-    return targets
-
-
-def test_calculate_value_targets():
-    # Arrange
-    rewards = [0.0, 0, 0, 0, 0, 0, 1, 0, 0, 0]
-    values = [0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 0, 0, 0]
-
-    # Act
-    targets = calculate_value_targets(rewards, values, 0.99, 0.95)
-
-    # Assert
-    print(targets)
-    assert True
-
 
 # ARRANGE DATA
 @dataclass
@@ -41,41 +16,34 @@ class TrainingData:
     value_targets: torch.Tensor
 
 
-def arrange_data(episodes: List[Episode], state_space_size: int, action_space_size: int):
+def arrange_data(
+    episodes: List[Episode], state_space_size: int, action_space_size: int, discount_factor: float, lambd: float
+):
     states = torch.tensor([e.states for e in episodes]).view(-1, state_space_size)
     actions = torch.tensor([e.actions for e in episodes]).view(-1, action_space_size)
     action_means = torch.tensor([e.action_means for e in episodes]).view(-1, action_space_size)
     action_stds = torch.tensor([e.action_stds for e in episodes]).view(-1, action_space_size)
     values = torch.tensor([e.values for e in episodes], dtype=torch.float).view(-1, 1).squeeze()
-    value_targets = torch.tensor([e.value_targets for e in episodes], dtype=torch.float).view(-1, 1).squeeze()
+    value_targets = (
+        torch.tensor([e.get_value_targets(discount_factor, lambd) for e in episodes], dtype=torch.float)
+        .view(-1, 1)
+        .squeeze()
+    )
     return TrainingData(states, actions, action_means, action_stds, values, value_targets)
 
 
 def test_arrange_data():
     # Arrange
-    ep1 = Episode(
-        states=[[1.0, 2, 3], [4, 5, 6]],
-        actions=[[0, 1], [2, 3]],
-        values=[0.8, 0.9],
-        rewards=[0, 0],
-        action_means=[[0.0, 1.1], [2.2, 3.1]],
-        action_stds=[[-0.1, 0.1], [1.2, 1.1]],
-        value_targets=[0.95, 0.85],
-        reward_sum=0,
-    )
-    ep2 = Episode(
-        states=[[0.0, 2, 3], [4, 5, 6]],
-        actions=[[-1, 2], [-2, 1]],
-        values=[0.8, 0.5],
-        rewards=[1, 0],
-        action_means=[[0.1, 1.1], [2.2, 3.1]],
-        action_stds=[[-0.3, 0.1], [1.2, 1.1]],
-        value_targets=[0.25, 0.85],
-        reward_sum=0,
-    )
+    ep1 = Episode()
+    ep1.add_transition([1.0, 2, 3], [0, 1], 0.8, 0, [0.0, 1.1], [-0.1, 0.1])
+    ep1.add_transition([4.0, 5, 6], [2, 3], 0.9, 0, [2.2, 3.1], [1.2, 1.1])
+
+    ep2 = Episode()
+    ep2.add_transition([0.0, 2, 3], [-1, 2], 0.8, 1, [0.1, 1.1], [-0.3, 0.1])
+    ep2.add_transition([4.0, 5, 6], [-2, 1], 0.5, 0, [2.2, 3.1], [1.2, 1.1])
 
     # Act
-    arranged_data = arrange_data([ep1, ep2], 3, 2)
+    arranged_data = arrange_data([ep1, ep2], 3, 2, 0.1, 0.1)
 
     # Assert
     assert arranged_data.states.size() == (4, 3)

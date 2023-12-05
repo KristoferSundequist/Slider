@@ -9,7 +9,7 @@ from slider import GameTwo, Game
 from torch.utils.data.sampler import BatchSampler, SubsetRandomSampler
 from torch.distributions import Normal, Independent
 import random
-from utils import calculate_value_targets, arrange_data, TrainingData
+from utils import arrange_data, TrainingData
 import globals
 from typing import *
 from episode import Episode
@@ -28,46 +28,37 @@ device = "cuda:0" if torch.cuda.is_available() else "cpu"
 print("DEVICE:", device)
 
 
-def get_episode(num_iterations: int):
+def get_episodes(n_episodes: int, num_iterations: int):
     with torch.no_grad():
-        game = the_game(width, height)
+        games = [the_game(width, height) for _ in range(n_episodes)]
+        episodes = [Episode() for _ in range(n_episodes)]
 
-        all_states = []
-        all_taken_actions = []
-        all_action_means = []
-        all_action_stds = []
-        all_values = []
-        all_rewards = []
-
-        current_state = game.get_state()
+        current_states = [game.get_state() for game in games]
 
         for i in range(num_iterations):
-            current_values, action_means, action_stds = agent.forward(torch.tensor([current_state]))
-            action = Normal(action_means, F.softplus(action_stds) + 0.001).sample().tolist()[0]
+            current_values, action_means, action_stds = agent.forward(torch.tensor(current_states))
+            actions = Normal(action_means, F.softplus(action_stds) + 0.001).sample().tolist()
 
-            reward, next_state = game.step(action)
+            action_means_list = action_means.tolist()
+            action_stds_list = action_stds.tolist()
 
-            all_states.append(current_state)
-            all_taken_actions.append(action)
-            all_action_means.append(action_means.tolist()[0])
-            all_action_stds.append(action_stds.tolist()[0])
-            all_values.append(current_values.item())
-            all_rewards.append(reward)
+            next_states = []
+            for gi in range(n_episodes):
+                reward, next_state = games[gi].step(actions[gi])
+                next_states.append(next_state)
 
-            current_state = next_state
+                episodes[gi].add_transition(
+                    current_states[gi],
+                    actions[gi],
+                    current_values[gi].item(),
+                    reward,
+                    action_means_list[gi],
+                    action_stds_list[gi],
+                )
 
-        return Episode(
-            states=all_states,
-            actions=all_taken_actions,
-            values=all_values,
-            rewards=all_rewards,
-            action_means=all_action_means,
-            action_stds=all_action_stds,
-            value_targets=calculate_value_targets(
-                all_rewards, all_values, globals.discount_factor, globals.lambd_factor
-            ),
-            reward_sum=sum(all_rewards),
-        )
+            current_states = next_states
+
+        return episodes
 
 
 running_reward = None
@@ -84,9 +75,9 @@ def train(
     for i in range(n_iterations):
         print(f"Episode {i+1} / {n_iterations}.")
         act_time_start = time.time()
-        episodes = [get_episode(episode_size) for _ in range(n_episodes_per_iteration)]
+        episodes = get_episodes(n_episodes_per_iteration, episode_size)
 
-        mean_reward = np.array([e.reward_sum for e in episodes]).mean()
+        mean_reward = np.array([e.get_reward_sum() for e in episodes]).mean()
         if running_reward == None:
             running_reward = mean_reward
         else:
@@ -96,7 +87,13 @@ def train(
         )
 
         train_train_start = time.time()
-        arranged_data = arrange_data(episodes, the_game.state_space_size, the_game.action_space_size)
+        arranged_data = arrange_data(
+            episodes,
+            the_game.state_space_size,
+            the_game.action_space_size,
+            globals.discount_factor,
+            globals.lambd_factor,
+        )
         pvo(arranged_data)
 
         print("Train time elapsed: ", time.time() - train_train_start)

@@ -16,9 +16,9 @@ recurrent_vector_size = 256
 sequence_length = 31
 batch_size = 48
 imagination_horizon=15
-entropy_coeff = 0.005
+entropy_coeff = 0.02
 
-update_frequency = 20
+update_frequency = 5
 target_network_gradient_steps = 100
 
 width = 700

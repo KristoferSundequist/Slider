@@ -11,6 +11,12 @@ class Logger:
             self.stuff[key] = []
         self.stuff[key].append(number)
 
+    def get_avg_of_window(self, key: str, size: int):
+        if self.stuff.get(key) is None:
+            return None
+
+        return sum(self.stuff[key][-size:]) / size
+
     def get_running_avg(self, key: str):
         if self.stuff.get(key) is None:
             return None

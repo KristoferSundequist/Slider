@@ -42,6 +42,44 @@ replay_buffer = ReplayBuffer(globals.replay_buffer_size)
 # export OMP_NUM_THREADS=1
 
 
+def train(iterations: int, num_parallell_games: int):
+    games = [game() for _ in range(num_parallell_games)]
+    states = [game.get_state() for game in games]
+    stoch_hidden_state = representationNetwork.get_initial(num_parallell_games)
+    recurrent_hidden_state = recurrentNetwork.get_initial(num_parallell_games)
+    seq_buffers = [SequenceBuffer(globals.sequence_length) for _ in range(num_parallell_games)]
+    actions = [0 for _ in range(num_parallell_games)]
+    total_rewards = [0.0 for _ in range(num_parallell_games)]
+
+    for i in range(iterations):
+        with torch.no_grad():
+            action_tensor = F.one_hot(torch.tensor(actions), game.action_space_size).float().to(globals.device)
+            recurrent_hidden_state = recurrentNetwork.forward(action_tensor, stoch_hidden_state, recurrent_hidden_state)
+            stoch_hidden_state = representationNetwork.forward(
+                torch.tensor(states).to(globals.device), recurrent_hidden_state
+            )
+            combined_hidden = combine_states(stoch_hidden_state, recurrent_hidden_state)
+            actions = Categorical(logits=policyNetwork.forward(combined_hidden)).sample().tolist()
+
+        for ei in range(num_parallell_games):
+            reward, next_state = games[ei].step(actions[ei])
+
+            seq_buffers[ei].push(states[ei], actions[ei], reward)
+
+            states[ei] = next_state
+            if i > globals.sequence_length:
+                replay_buffer.push(seq_buffers[ei].get())
+
+            total_rewards[ei] += reward
+
+        if i != 0 and len(replay_buffer) > 1000 and i % globals.update_frequency == 0:
+            recurrent_rollouts, stoch_rollouts = improve_rssm(replay_buffer.sample(globals.batch_size))
+            improve_behaviour(recurrent_rollouts, stoch_rollouts)
+
+    for ei in range(num_parallell_games):
+        logger.add("Reward", total_rewards[ei])
+
+
 def live(iterations: int, should_improve: bool, should_render: bool, should_visualize_reconstruction: bool):
     win: GraphWin | None = None
     if should_render:
@@ -62,7 +100,6 @@ def live(iterations: int, should_improve: bool, should_render: bool, should_visu
     reconstruction_game = game()
     transition_game = game()
     total_episode_reward = 0
-    start = time.time()
 
     state = g.get_state()
     stoch_hidden_state = representationNetwork.get_initial(1)
@@ -131,8 +168,6 @@ def live(iterations: int, should_improve: bool, should_render: bool, should_visu
     logger.add("Reward", total_episode_reward)
     print(f"avg_running_reward: {logger.get_running_avg('Reward')}, total_episode_reward: {total_episode_reward}")
 
-    end = time.time()
-    print("Elapsed time: ", end - start)
     if win is not None:
         win.close()
 
@@ -315,15 +350,20 @@ def calculate_value_loss(
 def calculate_policy_loss(
     values: torch.Tensor, value_targets: torch.Tensor, one_hot_actions: torch.Tensor, policy_logits: torch.Tensor
 ):
+    dist = OneHotCategorical(logits=policy_logits)
+
     # Policy loss
     advantages = (value_targets - values).detach()
-    assert one_hot_actions.size() == policy_logits.size()
-    taken_action_logits = (one_hot_actions * policy_logits).sum(2)
+    taken_action_logits = dist.log_prob(one_hot_actions)
     assert taken_action_logits.size() == advantages.size()
-    policy_loss = torch.neg(taken_action_logits * advantages).mean()
+    policy_loss = -(taken_action_logits * advantages).mean()
+    # assert one_hot_actions.size() == policy_logits.size()
+    # taken_action_logits = (one_hot_actions * policy_logits).sum(2)
+    # assert taken_action_logits.size() == advantages.size()
+    # policy_loss = torch.neg(taken_action_logits * advantages).mean()
 
     # entropy loss
-    entropy_loss = -OneHotCategorical(logits=policy_logits).entropy().mean()
+    entropy_loss = -dist.entropy().mean()
     scaled_entropy_loss = globals.entropy_coeff * entropy_loss
 
     logger.add("Policy_loss", policy_loss.item())
@@ -353,7 +393,13 @@ def improve_behaviour(recurrent_states: torch.Tensor, stoch_states: torch.Tensor
 def live_loop(lives, iterations):
     for i in range(lives):
         print(f"Iteration: {i} of {lives}")
-        live(iterations, True, False, False)
+        start = time.time()
+        train(iterations, 6)
+        end = time.time()
+        print("Elapsed time: ", end - start)
+        print(logger.get_avg_of_window("Reward", 6))
+        print("------------------------")
+        # live(iterations, True, False, False)
 
 
 def train_rssm(n_batches: int):
@@ -361,6 +407,7 @@ def train_rssm(n_batches: int):
         if i % (n_batches / 10) == 0:
             print(f"init training batch {i} of {n_batches}")
         improve_rssm(replay_buffer.sample(globals.batch_size))
+
 
 def init(lives: int, iterations: int):
     for i in range(lives):

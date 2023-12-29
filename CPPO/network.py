@@ -3,6 +3,7 @@ from torch import autograd, nn, optim
 import torch.nn.functional as F
 import numpy as np
 from typing import *
+import globals
 
 
 class TheNetwork(nn.Module):
@@ -14,7 +15,7 @@ class TheNetwork(nn.Module):
         value_hidden_size = 510
         self.value_1 = nn.Linear(state_space_size, value_hidden_size, bias=False)
         self.value_2 = nn.Linear(value_hidden_size, value_hidden_size, bias=False)
-        self.value_out = nn.Linear(value_hidden_size, 255, bias=False)
+        self.value_out = nn.Linear(value_hidden_size, globals.two_hot_bins, bias=False)
 
         action_hidden_size = 255
         self.action_1 = nn.Linear(state_space_size, action_hidden_size, bias=False)

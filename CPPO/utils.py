@@ -3,6 +3,7 @@ from episode import Episode
 import torch
 import torch.nn.functional as F
 from dataclasses import dataclass
+import globals
 
 
 # ARRANGE DATA
@@ -23,7 +24,7 @@ def arrange_data(
     actions = torch.tensor([e.actions for e in episodes]).view(-1, action_space_size)
     action_means = torch.tensor([e.action_means for e in episodes]).view(-1, action_space_size)
     action_stds = torch.tensor([e.action_stds for e in episodes]).view(-1, action_space_size)
-    value_logits = torch.tensor([e.value_logits for e in episodes], dtype=torch.float).view(-1, 255)
+    value_logits = torch.tensor([e.value_logits for e in episodes], dtype=torch.float).view(-1, globals.two_hot_bins)
     value_targets = (
         torch.tensor([e.get_value_targets(discount_factor, lambd) for e in episodes], dtype=torch.float)
         .view(-1, 1)

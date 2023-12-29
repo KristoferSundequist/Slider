@@ -11,12 +11,12 @@ class TheNetwork(nn.Module):
         self.state_space_size = state_space_size
         self.action_space_size = action_space_size
 
-        value_hidden_size = 512
+        value_hidden_size = 510
         self.value_1 = nn.Linear(state_space_size, value_hidden_size, bias=False)
         self.value_2 = nn.Linear(value_hidden_size, value_hidden_size, bias=False)
-        self.value_out = nn.Linear(value_hidden_size, 1, bias=False)
+        self.value_out = nn.Linear(value_hidden_size, 255, bias=False)
 
-        action_hidden_size = 256
+        action_hidden_size = 255
         self.action_1 = nn.Linear(state_space_size, action_hidden_size, bias=False)
         self.action_2 = nn.Linear(action_hidden_size, action_hidden_size, bias=False)
         self.action_out = nn.Linear(action_hidden_size, action_space_size * 2, bias=False)

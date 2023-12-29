@@ -14,6 +14,7 @@ import globals
 from typing import *
 from episode import Episode
 import torch.nn.functional as F
+from TwoHotEncodingDistribution import TwoHotEncodingDistribution
 
 ncpus = cpu_count()
 width = 800
@@ -36,7 +37,7 @@ def get_episodes(n_episodes: int, num_iterations: int):
         current_states = [game.get_state() for game in games]
 
         for i in range(num_iterations):
-            current_values, action_means, action_stds = agent.forward(torch.tensor(current_states))
+            current_value_logits, action_means, action_stds = agent.forward(torch.tensor(current_states))
             actions = Normal(action_means, F.softplus(action_stds) + 0.001).sample().tolist()
 
             action_means_list = action_means.tolist()
@@ -50,7 +51,7 @@ def get_episodes(n_episodes: int, num_iterations: int):
                 episodes[gi].add_transition(
                     current_states[gi],
                     actions[gi],
-                    current_values[gi].item(),
+                    current_value_logits[gi].tolist(),
                     reward,
                     action_means_list[gi],
                     action_stds_list[gi],
@@ -100,29 +101,41 @@ def train(
 
 
 def pvo(trainingData: TrainingData):
-    all_advantages = trainingData.value_targets - trainingData.values
+    all_values = TwoHotEncodingDistribution(trainingData.value_logits).mean.squeeze()
+    assert trainingData.value_targets.size() == all_values.size()
+    all_advantages = trainingData.value_targets - all_values
     all_normalized_advantages = (all_advantages - all_advantages.mean()) / all_advantages.std()
     for _ in range(globals.pvo_epochs):
         sampler = BatchSampler(range(0, len(trainingData.states)), globals.batch_size, drop_last=True)
         for indices in sampler:
-            new_values, new_action_means, new_action_stds = agent.forward(trainingData.states[indices])
-            new_values = new_values.squeeze(1)
+            new_value_logits, new_action_means, new_action_stds = agent.forward(trainingData.states[indices])
+            new_value_dist = TwoHotEncodingDistribution(new_value_logits)
 
             # Value loss
-            old_vals = trainingData.values[indices]
+            old_value_logits = trainingData.value_logits[indices]
+            old_value_dist = TwoHotEncodingDistribution(old_value_logits)
             value_target = trainingData.value_targets[indices]
 
-            assert new_values.size() == value_target.size(), f"{new_values.size()} == {value_target.size()}"
-            value_loss1 = (new_values - value_target).pow(2)
+            new_value_log_prob = new_value_dist.log_prob(value_target.view(-1, 1))
+            old_value_log_prob = old_value_dist.log_prob(value_target.view(-1, 1))
+            value_ratio = torch.exp(new_value_log_prob - old_value_log_prob)
 
-            assert old_vals.size() == new_values.size(), f"{old_vals.size()} == {new_values.size()}"
-            clipped = old_vals + torch.clamp(
-                new_values - old_vals, -globals.update_clamp_threshold, globals.update_clamp_threshold
+            clamped_value_ratio = torch.clamp(
+                value_ratio, 1 - globals.update_clamp_threshold, 1 + globals.update_clamp_threshold
             )
+            value_loss = -torch.min(value_ratio, clamped_value_ratio).mean()
 
-            assert clipped.size() == value_target.size()
-            value_loss2 = (clipped - value_target).pow(2)
-            value_loss = 0.5 * torch.max(value_loss1, value_loss2).mean()
+            # assert new_values.size() == value_target.size(), f"{new_values.size()} == {value_target.size()}"
+            # value_loss1 = (new_values - value_target).pow(2)
+
+            # assert old_vals.size() == new_values.size(), f"{old_vals.size()} == {new_values.size()}"
+            # clipped = old_vals + torch.clamp(
+            #     new_values - old_vals, -globals.update_clamp_threshold, globals.update_clamp_threshold
+            # )
+
+            # assert clipped.size() == value_target.size()
+            # value_loss2 = (clipped - value_target).pow(2)
+            # value_loss = 0.5 * torch.max(value_loss1, value_loss2).mean()
 
             # Action loss
             old_taken_actions = trainingData.actions[indices]
@@ -175,7 +188,8 @@ def agent_loop(iterations, std_coef: float):
         import time
 
         for i in range(iterations):
-            values, action_means, action_stds = agent.forward(torch.tensor([game.get_state()]))
+            value_logits, action_means, action_stds = agent.forward(torch.tensor([game.get_state()]))
+            values = TwoHotEncodingDistribution(value_logits).mean
             action = Normal(action_means, std_coef * F.softplus(action_stds)).sample().tolist()[0]
             _, _ = game.step(action)
 

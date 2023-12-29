@@ -12,7 +12,7 @@ class TrainingData:
     actions: torch.Tensor
     action_means: torch.Tensor
     action_stds: torch.Tensor
-    values: torch.Tensor
+    value_logits: torch.Tensor
     value_targets: torch.Tensor
 
 
@@ -23,13 +23,13 @@ def arrange_data(
     actions = torch.tensor([e.actions for e in episodes]).view(-1, action_space_size)
     action_means = torch.tensor([e.action_means for e in episodes]).view(-1, action_space_size)
     action_stds = torch.tensor([e.action_stds for e in episodes]).view(-1, action_space_size)
-    values = torch.tensor([e.values for e in episodes], dtype=torch.float).view(-1, 1).squeeze()
+    value_logits = torch.tensor([e.value_logits for e in episodes], dtype=torch.float).view(-1, 255)
     value_targets = (
         torch.tensor([e.get_value_targets(discount_factor, lambd) for e in episodes], dtype=torch.float)
         .view(-1, 1)
         .squeeze()
     )
-    return TrainingData(states, actions, action_means, action_stds, values, value_targets)
+    return TrainingData(states, actions, action_means, action_stds, value_logits, value_targets)
 
 
 def test_arrange_data():

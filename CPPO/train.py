@@ -5,7 +5,7 @@ import torch
 import time
 import copy
 from multiprocessing import Pool, cpu_count
-from slider import GameTwo, Game
+from slider import GameTwo, Game, GameMomentum
 from torch.utils.data.sampler import BatchSampler, SubsetRandomSampler
 from torch.distributions import Normal, Independent
 import random
@@ -19,7 +19,7 @@ ncpus = cpu_count()
 width = 800
 height = 700
 
-the_game = Game
+the_game = GameMomentum
 
 agent = TheNetwork(the_game.state_space_size, the_game.action_space_size)
 

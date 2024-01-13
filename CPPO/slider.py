@@ -8,23 +8,22 @@ from typing import *
 
 
 class Slider:
-    def __init__(self, width, height):
+    def __init__(self, width, height, max_speed):
         self.x = np.random.randint(50, width - 50)
         self.y = np.random.randint(50, height - 50)
         self.radius = 30
-        self.dx = np.random.randint(-10, 10)
-        self.dy = np.random.randint(-10, 10)
-        self.dd = 0.5
+        self.dx = np.random.randint(-max_speed, max_speed)
+        self.dy = np.random.randint(-max_speed, max_speed)
         self.width = width
         self.height = height
+        self.max_speed = max_speed
 
     def reset(self):
         self.x = np.random.randint(50, self.width - 50)
         self.y = np.random.randint(50, self.height - 50)
         self.radius = 30
-        self.dx = np.random.randint(-10, 10)
-        self.dy = np.random.randint(-10, 10)
-        self.dd = 0.5
+        self.dx = np.random.randint(-self.max_speed, self.max_speed)
+        self.dy = np.random.randint(-self.max_speed, self.max_speed)
 
     #   1
     # 0   2
@@ -34,14 +33,14 @@ class Slider:
         self.dx += direction[0] / direction_normalizer
         self.dy += direction[1] / direction_normalizer
 
-        if self.dx > 10:
-            self.dx = 10
-        if self.dx < -10:
-            self.dx = -10
-        if self.dy > 10:
-            self.dy = 10
-        if self.dy < -10:
-            self.dy = -10
+        if self.dx > self.max_speed:
+            self.dx = self.max_speed
+        if self.dx < -self.max_speed:
+            self.dx = -self.max_speed
+        if self.dy > self.max_speed:
+            self.dy = self.max_speed
+        if self.dy < -self.max_speed:
+            self.dy = -self.max_speed
 
     def update(self):
         if self.x + self.radius >= self.width:
@@ -132,6 +131,67 @@ class Enemy:
             self.y += self.speed
 
 
+class EnemyMomentum:
+    def __init__(self, radius, width, height, max_speed):
+        self.x = np.random.randint(width)
+        self.y = np.random.randint(height)
+        self.dx = np.random.randint(-max_speed, max_speed)
+        self.dy = np.random.randint(-max_speed, max_speed)
+        self.radius = radius
+        self.width = width
+        self.height = height
+        self.max_speed = 5
+
+    def reset(self):
+        self.x = np.random.randint(self.width)
+        self.y = np.random.randint(self.height)
+        self.dx = np.random.randint(-self.max_speed, self.max_speed)
+        self.dy = np.random.randint(-self.max_speed, self.max_speed)
+
+    def render(self, win):
+        c = Circle(Point(self.x, self.y), self.radius)
+        c.setFill("red")
+        c.setOutline("red")
+        c.draw(win)
+
+    def update(self, sliderx, slidery):
+        diffx = sliderx - self.x
+        diffy = slidery - self.y
+        direction_normalizer = max(abs(diffx + diffy), 1000)
+        self.dx += diffx / direction_normalizer
+        self.dy += diffy / direction_normalizer
+
+        if self.dx > self.max_speed:
+            self.dx = self.max_speed
+        if self.dx < -self.max_speed:
+            self.dx = -self.max_speed
+        if self.dy > self.max_speed:
+            self.dy = self.max_speed
+        if self.dy < -self.max_speed:
+            self.dy = -self.max_speed
+
+        if self.x + self.radius >= self.width:
+            self.x = self.width - self.radius * 2
+            self.dx *= -1
+
+        if self.x - self.radius <= 0:
+            self.x = self.radius
+            self.dx *= -1
+
+        if self.y + self.radius >= self.height:
+            self.y = self.height - self.radius * 2
+            self.dy *= -1
+
+        if self.y - self.radius <= 0:
+            self.y = self.radius
+            self.dy *= -1
+
+        self.x += self.dx
+        self.y += self.dy
+        self.dx *= 0.99
+        self.dy *= 0.99
+
+
 ##########################################
 ## GAME 1 ################################
 ##########################################
@@ -142,7 +202,7 @@ class Game:
     action_space_size = 2
 
     def __init__(self, width, height):
-        self.s = Slider(width, height)
+        self.s = Slider(width, height, 10)
         self.t = Target(50, width, height)
         self.enemy = Enemy(30, 1, width, height)
         self.width = width
@@ -197,8 +257,8 @@ class GameTwo:
     action_space_size = 4
 
     def __init__(self, width, height):
-        self.s1 = Slider(width, height)
-        self.s2 = Slider(width, height)
+        self.s1 = Slider(width, height, 10)
+        self.s2 = Slider(width, height, 10)
         self.t = Target(50, width, height)
         self.enemy = Enemy(30, 1, width, height)
         self.width = width
@@ -249,6 +309,65 @@ class GameTwo:
             self.t.reset()
 
         if self.intersect(self.s1, self.enemy) or self.intersect(self.s2, self.enemy):
+            reward -= 1
+            self.enemy.reset()
+
+        return reward, self.get_state()
+
+
+##########################################
+## GAME 3 (ENEMY MOMENTUM ################
+##########################################
+
+
+class GameMomentum:
+    state_space_size = 10
+    action_space_size = 2
+
+    def __init__(self, width, height):
+        self.slider_max_speed = 10
+        self.enemy_max_speed = 5
+        self.s = Slider(width, height, self.slider_max_speed)
+        self.t = Target(50, width, height)
+        self.enemy = EnemyMomentum(30, width, height, self.enemy_max_speed)
+        self.width = width
+        self.height = height
+
+    def intersect(self, slider, target):
+        return slider.radius + target.radius > np.sqrt(
+            np.power(slider.x - target.x, 2) + np.power(slider.y - target.y, 2)
+        )
+
+    def get_state(self) -> List[float]:
+        return [
+            self.s.x / self.width,
+            self.s.y / self.height,
+            self.s.dx / self.slider_max_speed,
+            self.s.dy / self.slider_max_speed,
+            self.t.x / self.width,
+            self.t.y / self.height,
+            self.enemy.x / self.width,
+            self.enemy.y / self.height,
+            self.enemy.dx / self.enemy_max_speed,
+            self.enemy.dy / self.enemy_max_speed,
+        ]
+
+    def render(self, win):
+        self.t.render(win)
+        self.s.render(win)
+        self.enemy.render(win)
+
+    def step(self, action: List[float]):
+        self.s.push(action)
+        self.s.update()
+        self.enemy.update(self.s.x, self.s.y)
+
+        reward = 0
+        if self.intersect(self.s, self.t):
+            reward += 0.2
+            self.t.reset()
+
+        if self.intersect(self.s, self.enemy):
             reward -= 1
             self.enemy.reset()
 
